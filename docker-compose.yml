@@ -1,20 +1,20 @@
-version: "3.8"
-
 services:
   tooncar-racing:
     build:
       context: .
       dockerfile: Dockerfile
+    image: tooncar-racing:latest
     container_name: tooncar-racing-3d
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "${APP_PORT:-3001}:3000"
     environment:
-      NODE_ENV: production
-      PORT: "3000"
+      - NODE_ENV=production
+      - PORT=3000
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/rooms"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/rooms').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 10s
