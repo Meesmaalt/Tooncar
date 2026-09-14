@@ -10,10 +10,8 @@ COPY package.json ./
 # Install all dependencies (including devDependencies needed for build)
 RUN npm install
 
-# Copy source code and configs
-COPY tsconfig.json vite.config.ts index.html metadata.json ./
-COPY src ./src
-COPY server.ts ./
+# Copy source code and project configuration files
+COPY . .
 
 # Build frontend and bundled backend into dist/
 RUN npm run build
@@ -30,9 +28,8 @@ ENV PORT=3000
 COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
-# Copy compiled assets and server bundle from builder
+# Copy compiled assets and standalone server bundle from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server.js ./server.js
 
 EXPOSE 3000
 
@@ -41,3 +38,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/rooms').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
 CMD ["node", "dist/server.cjs"]
+
