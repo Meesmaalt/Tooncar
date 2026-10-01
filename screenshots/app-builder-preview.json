@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "ToonCar GP",
+      "hasCanvas": false,
+      "bodyTextLen": 181,
+      "bodyTextHash": "d43786b2c451af3814e7cda5d53cb68e06aec86c0fff38af6e3a2bcabfcd0251",
+      "bodyTextPrefix": "GRAND PRIX ToonCar GP Cinematic 3D kart — kuus teemat, drift ja ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "ToonCar GP",
+      "hasCanvas": false,
+      "bodyTextLen": 181,
+      "bodyTextHash": "d43786b2c451af3814e7cda5d53cb68e06aec86c0fff38af6e3a2bcabfcd0251",
+      "bodyTextPrefix": "GRAND PRIX ToonCar GP Cinematic 3D kart — kuus teemat, drift ja ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

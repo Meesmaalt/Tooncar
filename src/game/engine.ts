@@ -8,6 +8,8 @@ import { getRandomPowerUp, POWER_UPS, createRocketMesh, createBlueRocketMesh, cr
 import { soundManager } from '../audio/soundManager';
 import { ParticleSystem } from './particles';
 import { SkidMarkManager } from './skidmarks';
+import { addWorldDressing, createSun } from './environment';
+import { preloadTextures } from './textureLib';
 
 // Pre-allocated static scratch vectors for zero-allocation per-frame engine updates
 const _visFwd = new THREE.Vector3();
@@ -91,6 +93,11 @@ export class ToonCarEngine {
   private skidMarks: SkidMarkManager;
   private cloudsGroup?: THREE.Group;
   private cameraShake: number = 0;
+  private sunLight?: THREE.DirectionalLight;
+  private sunTarget?: THREE.Object3D;
+  private worldWater?: THREE.Mesh;
+  private qaHeld: Set<string> = new Set();
+  private envReady = false;
   private fxThrottle: number = 0;
   /** Blocks item use briefly after pickup so Space/E hold won't instant-fire */
   private itemArmTimers: Map<string, number> = new Map();
@@ -165,24 +172,27 @@ export class ToonCarEngine {
     }
 
     // 1. Three.js setup
+    preloadTextures();
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(trackDef.skyColor);
-    this.scene.fog = new THREE.FogExp2(trackDef.fogColor, 0.0028);
+    this.scene.fog = new THREE.FogExp2(trackDef.fogColor, 0.00155);
 
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
-    this.camera = new THREE.PerspectiveCamera(65, width / height, 0.1, 1000);
+    this.camera = new THREE.PerspectiveCamera(62, width / height, 0.2, 1400);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(1); // locked 1.0 — DPR>1 is a major stutter source on many GPUs
-    this.renderer.shadowMap.enabled = false;
-    this.renderer.toneMapping = THREE.NoToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = trackDef.theme === 'spooky' || trackDef.theme === 'cyber' ? 1.05 : 1.18;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
     this.renderer.sortObjects = true;
-    // Cheaper auto-clear path
     this.renderer.autoClear = true;
+    this.renderer.domElement.style.touchAction = 'none';
 
     // 2. Systems
     this.particles = new ParticleSystem(this.scene);
@@ -220,47 +230,39 @@ export class ToonCarEngine {
     soundManager.init();
     soundManager.startMusic();
 
+    this.installControlsProbe();
+
     // Begin loop
     this.lastTime = performance.now();
     this.loop();
   }
 
   private setupLighting() {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.72);
-    this.scene.add(ambient);
-
-    const sun = new THREE.DirectionalLight(0xfffaed, 1.25);
-    sun.position.set(60, 100, 40);
+    const { sun, target } = createSun(this.trackDef.theme);
+    this.sunLight = sun;
+    this.sunTarget = target;
+    this.scene.add(target);
     this.scene.add(sun);
 
-    // Subtle blue hemisphere ground bounce
-    const hemi = new THREE.HemisphereLight(0xffffff, this.trackDef.groundColor, 0.52);
+    const hemiSky =
+      this.trackDef.theme === 'volcano' ? 0xffb089 : this.trackDef.theme === 'spooky' ? 0xa5b4fc : this.trackDef.theme === 'cyber' ? 0x67e8f9 : 0xf8fafc;
+    const hemi = new THREE.HemisphereLight(hemiSky, this.trackDef.groundColor, 0.62);
     this.scene.add(hemi);
 
-    // Rim light for rich 3D body reflections and depth definition
-    const rimLight = new THREE.DirectionalLight(0xdbeafe, 0.45);
-    rimLight.position.set(-70, 50, -50);
-    this.scene.add(rimLight);
+    const fill = new THREE.DirectionalLight(0xdbeafe, 0.38);
+    fill.position.set(-80, 40, -60);
+    this.scene.add(fill);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.22);
+    this.scene.add(ambient);
   }
 
   private setupTrack() {
     this.trackData = buildTrack(this.trackDef);
 
-    // Ground terrain plane
-    const groundGeo = new THREE.PlaneGeometry(2400, 2400);
-    groundGeo.rotateX(-Math.PI / 2);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: this.trackDef.groundColor,
-      roughness: 0.95,
-    });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.position.y = -0.15;
-    if (this.trackDef.theme === 'sky') {
-      ground.visible = false;
-    }
-    this.scene.add(ground);
+    const dressing = addWorldDressing(this.scene, this.trackDef, this.trackData);
+    this.worldWater = dressing.water;
 
-    // Add track parts
     this.scene.add(this.trackData.trackMesh);
     this.scene.add(this.trackData.curbsMesh);
     this.scene.add(this.trackData.wallsMesh);
@@ -270,33 +272,21 @@ export class ToonCarEngine {
       this.scene.add(this.trackData.waterMesh);
     }
 
-    // Item boxes
     this.trackData.itemBoxes.forEach(box => {
       this.scene.add(box.mesh);
     });
 
-    // Boost pad visual meshes (styled 3D chevron pads with side guide rails)
     this.trackData.boostPads.forEach(pad => {
-      this.scene.add(pad.mesh);
+      if (pad.mesh) this.scene.add(pad.mesh);
     });
 
-    // Fluffy cartoon clouds
-    const cloudsGroup = new THREE.Group();
-    const cMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
-    for (let i = 0; i < 14; i++) {
-      const cloud = new THREE.Group();
-      for (let j = 0; j < 4; j++) {
-        const cGeo = new THREE.SphereGeometry(6 + Math.random() * 4, 7, 7);
-        const puff = new THREE.Mesh(cGeo, cMat);
-        puff.position.set((j - 1.5) * 5, Math.sin(j * 1.5) * 2, (Math.random() - 0.5) * 3);
-        puff.scale.set(1.4, 0.7, 1);
-        cloud.add(puff);
-      }
-      cloud.position.set((Math.random() - 0.5) * 550, 70 + Math.random() * 25, (Math.random() - 0.5) * 550);
-      cloudsGroup.add(cloud);
-    }
-    this.scene.add(cloudsGroup);
-    this.cloudsGroup = cloudsGroup;
+    try {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const envTex = pmrem.fromScene(this.scene, 0.02).texture;
+      this.scene.environment = envTex;
+      pmrem.dispose();
+    } catch (_) {}
+    this.envReady = true;
   }
 
   private setupRacers(
@@ -633,17 +623,21 @@ export class ToonCarEngine {
 
       if (canDrive && !racer.finished) {
         if (isLocal) {
-          // Merge Keyboard & Gamepad
-          input = {
-            throttle: Math.max(this.localInput.throttle, this._gamepadInput.throttle),
-            brake: Math.max(this.localInput.brake, this._gamepadInput.brake),
-            steer: Math.abs(this._gamepadInput.steer) > 0.1 ? this._gamepadInput.steer : this.localInput.steer,
-            drift: this.localInput.drift || this._gamepadInput.drift,
-            useItem: this.localInput.useItem || this._gamepadInput.useItem,
-            honk: this.localInput.honk || this._gamepadInput.honk,
-            lookBehind: this.localInput.lookBehind || this._gamepadInput.lookBehind,
-            respawn: this.localInput.respawn || this._gamepadInput.respawn
-          };
+          // Merge Keyboard & Gamepad (qa held-keys override for controls self-test)
+          if (this.qaHeld.size > 0) {
+            input = this.inputFromCodes(this.qaHeld);
+          } else {
+            input = {
+              throttle: Math.max(this.localInput.throttle, this._gamepadInput.throttle),
+              brake: Math.max(this.localInput.brake, this._gamepadInput.brake),
+              steer: Math.abs(this._gamepadInput.steer) > 0.1 ? this._gamepadInput.steer : this.localInput.steer,
+              drift: this.localInput.drift || this._gamepadInput.drift,
+              useItem: this.localInput.useItem || this._gamepadInput.useItem,
+              honk: this.localInput.honk || this._gamepadInput.honk,
+              lookBehind: this.localInput.lookBehind || this._gamepadInput.lookBehind,
+              respawn: this.localInput.respawn || this._gamepadInput.respawn
+            };
+          }
 
           if (input.useItem && racer.currentItem) {
             const arm = this.itemArmTimers.get(racer.id) || 0;
@@ -1756,13 +1750,15 @@ export class ToonCarEngine {
     if (this.trackData.hazards) {
       const nowSec = performance.now() * 0.001;
       this.trackData.hazards.forEach(hazard => {
-        hazard.sweepProgress = (hazard.sweepProgress || 0) + dt * hazard.sweepSpeed;
+        const sweep = hazard.sweepSpeed ?? 1;
+        const range = hazard.sweepRange ?? 8;
+        hazard.sweepProgress = (hazard.sweepProgress || 0) + dt * sweep;
         if (!hazard.mesh) return;
 
         if (hazard.type === 'pendulum') {
           const swingArm = hazard.mesh.getObjectByName('swing_arm');
           if (swingArm) {
-            const swingAngle = Math.sin(nowSec * hazard.sweepSpeed) * 0.95;
+            const swingAngle = Math.sin(nowSec * sweep) * 0.95;
             swingArm.rotation.z = swingAngle;
             // Update collision point offset based on blade position
             const sinA = Math.sin(swingAngle);
@@ -1771,27 +1767,27 @@ export class ToonCarEngine {
         } else if (hazard.type === 'laser_sweeper') {
           const laserArm = hazard.mesh.getObjectByName('laser_beam');
           if (laserArm) {
-            laserArm.position.y = 1.6 + Math.sin(nowSec * hazard.sweepSpeed) * 1.2;
+            laserArm.position.y = 1.6 + Math.sin(nowSec * sweep) * 1.2;
           }
         } else if (hazard.type === 'snow_boulder') {
           const boulder = hazard.mesh.getObjectByName('rolling_boulder');
           if (boulder) {
-            boulder.position.x = Math.sin(nowSec * hazard.sweepSpeed) * (hazard.sweepRange * 0.6);
+            boulder.position.x = Math.sin(nowSec * sweep) * (range * 0.6);
             boulder.rotation.z -= dt * 4.5;
             hazard.x = hazard.mesh.position.x + boulder.position.x;
           }
         } else if (hazard.type === 'magma_geyser' || hazard.type === 'water_spout') {
           const spout = hazard.mesh.getObjectByName('erupting_spout');
           if (spout) {
-            const pulse = 0.5 + Math.abs(Math.sin(nowSec * hazard.sweepSpeed)) * 0.9;
+            const pulse = 0.5 + Math.abs(Math.sin(nowSec * sweep)) * 0.9;
             spout.scale.set(1 + pulse * 0.3, pulse, 1 + pulse * 0.3);
             spout.position.y = (spout.scale.y * 7.0) / 2;
           }
         } else if (hazard.type === 'fireball') {
           const fb = hazard.mesh.getObjectByName('fireball_mesh');
           if (fb) {
-            fb.position.x = Math.sin(nowSec * hazard.sweepSpeed) * (hazard.sweepRange * 0.5);
-            fb.position.y = 2.2 + Math.abs(Math.sin(nowSec * hazard.sweepSpeed * 2)) * 1.5;
+            fb.position.x = Math.sin(nowSec * sweep) * (range * 0.5);
+            fb.position.y = 2.2 + Math.abs(Math.sin(nowSec * sweep * 2)) * 1.5;
             hazard.x = hazard.mesh.position.x + fb.position.x;
           }
         }
@@ -1845,6 +1841,16 @@ export class ToonCarEngine {
 
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(this.currentCamLookTarget);
+
+    if (this.sunLight && this.sunTarget) {
+      this.sunTarget.position.set(player.x, player.y, player.z);
+      this.sunLight.position.set(player.x + 55, player.y + 90, player.z + 40);
+      this.sunLight.target.updateMatrixWorld();
+    }
+
+    if (this.worldWater) {
+      this.worldWater.position.y = (this.trackDef.theme === 'ice' ? -0.55 : -0.85) + Math.sin(performance.now() * 0.0006) * 0.08;
+    }
 
     // Camera shake — smooth sine, not random every frame (random caused constant micro-jerk)
     if (this.cameraShake > 0.001) {
@@ -1911,6 +1917,7 @@ export class ToonCarEngine {
     }
     window.removeEventListener('resize', this.onWindowResize);
     soundManager.stopMusic();
+    if (window.__controlsTest) delete window.__controlsTest;
 
     this.particles.clear();
     this.skidMarks.clear();
@@ -1926,5 +1933,55 @@ export class ToonCarEngine {
       this.container.removeChild(this.renderer.domElement);
     }
     this.renderer.dispose();
+  }
+
+  private inputFromCodes(codes: Set<string>): PlayerInput {
+    const has = (...list: string[]) => list.some((c) => codes.has(c));
+    let steer = 0;
+    if (has('KeyA', 'ArrowLeft')) steer -= 1;
+    if (has('KeyD', 'ArrowRight')) steer += 1;
+    return {
+      throttle: has('KeyW', 'ArrowUp') ? 1 : 0,
+      brake: has('KeyS', 'ArrowDown') ? 1 : 0,
+      steer,
+      drift: has('Space', 'ShiftLeft', 'ShiftRight'),
+      useItem: has('KeyE', 'Enter'),
+      honk: has('KeyH'),
+      lookBehind: has('KeyC'),
+      respawn: has('KeyR'),
+    };
+  }
+
+  private installControlsProbe() {
+    window.__controlsTest = {
+      getYaw: () => {
+        const p = this.racers.find((r) => r.id === this.localPlayerId) || this.racers[0];
+        // Probe uses skill convention (+yaw = player-visible left). Internal rotY is +Z-forward.
+        return p ? -p.rotY : 0;
+      },
+      getSpeed: () => {
+        const p = this.racers.find((r) => r.id === this.localPlayerId) || this.racers[0];
+        return p ? p.speed : 0;
+      },
+      setSteer: (v: number) => {
+        this.qaHeld.clear();
+        this.localInput.steer = -v;
+      },
+      setKeys: (codes: string[]) => {
+        this.qaHeld = new Set(codes);
+        if (codes.length === 0) {
+          this.localInput.throttle = 0;
+          this.localInput.brake = 0;
+          this.localInput.steer = 0;
+          this.localInput.drift = false;
+        } else {
+          const mapped = this.inputFromCodes(this.qaHeld);
+          this.localInput.throttle = mapped.throttle;
+          this.localInput.brake = mapped.brake;
+          this.localInput.steer = mapped.steer;
+          this.localInput.drift = mapped.drift;
+        }
+      },
+    };
   }
 }

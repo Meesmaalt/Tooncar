@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face {
+    font-family: Race;
+    src: url("file:///usr/share/fonts/truetype/liberation/LiberationSansNarrow-Bold.ttf") format("truetype");
+    font-weight: 700;
+  }
+  html, body { margin: 0; padding: 0; background: #0c0d10; }
+  .stage {
+    width: 1200px;
+    height: 630px;
+    position: relative;
+    overflow: hidden;
+    background: #0c0d10;
+  }
+  .sky {
+    position: absolute; inset: 0 0 38% 0;
+    background:
+      radial-gradient(ellipse 48% 34% at 70% 28%, rgba(255,232,170,0.55) 0%, transparent 58%),
+      linear-gradient(180deg, #0c0d10 0%, #141821 42%, #3a4558 72%, #b88858 100%);
+  }
+  .sun {
+    position: absolute;
+    width: 108px; height: 108px; border-radius: 50%;
+    left: 66%; top: 9%;
+    background: radial-gradient(circle at 38% 36%, #fffdf2 0%, #ffe08a 40%, #f0c27a 72%, rgba(240,194,122,0) 100%);
+    box-shadow: 0 0 70px 28px rgba(255,224,140,0.5), 0 0 140px 60px rgba(240,194,122,0.22);
+  }
+  .ocean {
+    position: absolute; left: 0; right: 0; top: 52%; height: 18%;
+    background:
+      linear-gradient(180deg, rgba(90,170,196,0.85) 0%, #1a6b88 40%, #0e3d52 100%);
+  }
+  .ocean::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      180deg,
+      transparent 0 10px,
+      rgba(200,204,212,0.12) 10px 12px
+    );
+    opacity: 0.45;
+  }
+  .beach {
+    position: absolute; left: 0; right: 0; top: 66%; height: 10%;
+    background:
+      linear-gradient(180deg, #c4a06a 0%, #8a6a3e 100%);
+  }
+  .track-wrap {
+    position: absolute;
+    left: -20%;
+    right: -20%;
+    bottom: -8%;
+    height: 48%;
+    perspective: 280px;
+    perspective-origin: 50% 0%;
+  }
+  .track {
+    width: 100%;
+    height: 140%;
+    transform: rotateX(64deg);
+    transform-origin: 50% 0%;
+    background-image:
+      linear-gradient(90deg, transparent 0 12%, rgba(12,13,16,0.35) 18%, transparent 28%, transparent 72%, rgba(12,13,16,0.35) 82%, transparent 88% 100%),
+      linear-gradient(90deg, transparent 48.6%, #c8ccd4 48.6%, #c8ccd4 51.4%, transparent 51.4%),
+      linear-gradient(90deg, #c24141 0 1.4%, transparent 1.4% 98.6%, #c24141 98.6% 100%),
+      url("file:///workspace/.grok/og-refs/asphalt.jpg");
+    background-size: 100% 100%, 100% 100%, 100% 100%, 280px 280px;
+    box-shadow: inset 0 40px 60px rgba(12,13,16,0.45);
+  }
+  .skid {
+    position: absolute; left: 38%; bottom: 6%; width: 34%; height: 10%;
+    background: radial-gradient(ellipse, rgba(12,13,16,0.55) 0%, transparent 70%);
+    transform: skewX(-28deg);
+  }
+  .vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 48%, transparent 42%, rgba(12,13,16,0.55) 100%);
+    pointer-events: none;
+    z-index: 8;
+  }
+  .art, .lockup { position: absolute; inset: 0; }
+  .art { z-index: 4; }
+  .lockup { z-index: 12; pointer-events: none; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="sky"></div>
+    <div class="sun"></div>
+    <div class="ocean"></div>
+    <div class="beach"></div>
+    <div class="track-wrap"><div class="track"></div></div>
+    <div class="skid"></div>
+    <svg class="art" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+      <!-- distant gantry -->
+      <g opacity="0.92">
+        <rect x="470" y="268" width="10" height="92" rx="2" fill="#c8ccd4"/>
+        <rect x="720" y="268" width="10" height="92" rx="2" fill="#c8ccd4"/>
+        <rect x="458" y="258" width="284" height="18" rx="3" fill="#8a909a"/>
+        <rect x="458" y="258" width="284" height="18" rx="3" fill="none" stroke="#c8ccd4" stroke-width="2"/>
+        <g fill="#c24141">
+          <circle cx="500" cy="267" r="5"/>
+          <circle cx="560" cy="267" r="5"/>
+          <circle cx="620" cy="267" r="5"/>
+          <circle cx="680" cy="267" r="5"/>
+          <circle cx="740" cy="267" r="5"/>
+        </g>
+        <rect x="468" y="252" width="14" height="8" fill="#c8ccd4"/>
+        <rect x="718" y="252" width="14" height="8" fill="#c8ccd4"/>
+      </g>
+      <!-- palms -->
+      <g transform="translate(86,250)">
+        <path d="M28 190 C26 120, 34 70, 40 18" stroke="#5a3a1e" stroke-width="14" fill="none" stroke-linecap="round"/>
+        <path d="M40 22 C-10 8, -24 40, 8 48 C4 22, 22 18, 40 22" fill="#2f6a3a"/>
+        <path d="M40 18 C88 0, 110 28, 78 46 C86 20, 58 10, 40 18" fill="#3d8a49"/>
+        <path d="M42 20 C70 -28, 108 -10, 86 24 C74 -2, 52 8, 42 20" fill="#2a6234"/>
+        <path d="M38 24 C8 -20, -30 0, -4 32 C8 4, 26 12, 38 24" fill="#348044"/>
+      </g>
+      <g transform="translate(980,270) scale(0.82)">
+        <path d="M36 180 C40 110, 30 66, 28 16" stroke="#5a3a1e" stroke-width="13" fill="none" stroke-linecap="round"/>
+        <path d="M28 20 C78 6, 96 40, 62 50 C70 24, 44 16, 28 20" fill="#2f6a3a"/>
+        <path d="M28 16 C-16 4, -34 34, -2 48 C-8 22, 12 12, 28 16" fill="#3d8a49"/>
+        <path d="M30 18 C4 -30, -36 -8, -12 26 C0 -2, 18 8, 30 18" fill="#2a6234"/>
+        <path d="M26 22 C58 -16, 96 6, 70 38 C58 8, 40 12, 26 22" fill="#348044"/>
+      </g>
+      <g transform="translate(160,310) scale(0.55)" opacity="0.85">
+        <path d="M28 160 C26 100, 32 60, 36 16" stroke="#5a3a1e" stroke-width="14" fill="none" stroke-linecap="round"/>
+        <path d="M36 18 C-8 6, -20 36, 8 44 C6 20, 22 16, 36 18" fill="#2f6a3a"/>
+        <path d="M36 16 C82 0, 100 30, 70 44 C76 18, 50 10, 36 16" fill="#3d8a49"/>
+      </g>
+      <!-- drift dust -->
+      <g opacity="0.35" fill="#c8ccd4">
+        <ellipse cx="430" cy="560" rx="90" ry="22"/>
+        <ellipse cx="500" cy="548" rx="60" ry="16"/>
+        <ellipse cx="370" cy="552" rx="50" ry="14"/>
+      </g>
+      <!-- kart -->
+      <g transform="translate(430,355) rotate(-12)">
+        <!-- rear wheel -->
+        <ellipse cx="92" cy="168" rx="50" ry="50" fill="#0c0d10"/>
+        <ellipse cx="92" cy="168" rx="50" ry="50" fill="none" stroke="#c8ccd4" stroke-width="7"/>
+        <ellipse cx="92" cy="168" rx="22" ry="22" fill="#1a1d24"/>
+        <ellipse cx="92" cy="168" rx="8" ry="8" fill="#c8ccd4"/>
+        <!-- body shadow -->
+        <ellipse cx="168" cy="188" rx="150" ry="18" fill="#0c0d10" opacity="0.45"/>
+        <!-- chassis -->
+        <path d="M48 150 C60 108, 110 86, 168 82 C236 78, 292 98, 318 128 C338 148, 332 168, 300 176 L86 186 C52 184, 40 168, 48 150 Z" fill="#9b2e2e"/>
+        <path d="M58 144 C70 108, 118 90, 174 88 C238 86, 290 104, 310 132 C326 150, 314 164, 284 168 L92 176 C62 174, 50 160, 58 144 Z" fill="#c24141"/>
+        <path d="M90 112 C130 96, 200 94, 250 110 C220 118, 150 122, 90 112 Z" fill="#e05a5a"/>
+        <!-- cockpit -->
+        <path d="M148 100 C168 78, 214 74, 242 92 C230 114, 186 120, 148 100 Z" fill="#1a1d24"/>
+        <path d="M158 98 C174 84, 210 82, 230 94 C220 108, 186 112, 158 98 Z" fill="#7ec8e0" opacity="0.85"/>
+        <!-- helmet -->
+        <ellipse cx="196" cy="90" rx="22" ry="20" fill="#c8ccd4"/>
+        <ellipse cx="200" cy="88" rx="12" ry="10" fill="#1a1d24"/>
+        <rect x="184" y="92" width="26" height="6" rx="3" fill="#c24141"/>
+        <!-- spoiler -->
+        <rect x="54" y="96" width="64" height="10" rx="3" fill="#c8ccd4"/>
+        <rect x="78" y="104" width="10" height="28" fill="#8a909a"/>
+        <!-- nose stripe -->
+        <path d="M250 132 L312 140 L300 158 L244 150 Z" fill="#c8ccd4"/>
+        <!-- front wheel -->
+        <ellipse cx="286" cy="176" rx="38" ry="38" fill="#0c0d10"/>
+        <ellipse cx="286" cy="176" rx="38" ry="38" fill="none" stroke="#c8ccd4" stroke-width="6"/>
+        <ellipse cx="286" cy="176" rx="16" ry="16" fill="#1a1d24"/>
+        <ellipse cx="286" cy="176" rx="6" ry="6" fill="#c8ccd4"/>
+        <!-- chrome pipe -->
+        <rect x="118" y="170" width="44" height="10" rx="4" fill="#c8ccd4"/>
+      </g>
+    </svg>
+    <svg class="lockup" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="pop" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="8" stdDeviation="0" flood-color="#0c0d10"/>
+          <feDropShadow dx="0" dy="18" stdDeviation="14" flood-color="#0c0d10" flood-opacity="0.55"/>
+        </filter>
+      </defs>
+      <g text-anchor="middle" font-family="Race, Liberation Sans Narrow, sans-serif" font-weight="700" filter="url(#pop)">
+        <text x="600" y="292" font-size="168" letter-spacing="6" fill="#c8ccd4" stroke="#c24141" stroke-width="16" paint-order="stroke fill">ToonCar</text>
+        <text x="600" y="430" font-size="132" letter-spacing="22" fill="#c24141" stroke="#c8ccd4" stroke-width="12" paint-order="stroke fill">GP</text>
+      </g>
+    </svg>
+    <div class="vignette"></div>
+  </div>
+</body>
+</html>

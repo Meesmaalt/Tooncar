@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TrackDefinition, JumpRamp, TrackHazard, StuntRing } from '../types';
+import { applyAlbedoMap } from './textureLib';
 
 class TurtlePath {
   x: number = 0;
@@ -1769,24 +1770,24 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
   roadGeo.computeVertexNormals();
 
   // Create individual surface materials
-  const asphaltTex = createAsphaltTexture(trackDef.trackColor, trackDef.theme);
-  const woodTex = createWoodTexture();
-  const cobbleTex = createCobblestoneTexture();
-  const sandTex = createSandTexture();
-  const dirtTex = createDirtTexture();
-  const iceTex = createIceTexture();
-  const magmaTex = createMagmaTexture();
-  const cyberGlassTex = createCyberGlassTexture();
+  const asphaltTex = applyAlbedoMap('asphalt', createAsphaltTexture(trackDef.trackColor, trackDef.theme), 40);
+  const woodTex = applyAlbedoMap('wood', createWoodTexture(), 40);
+  const cobbleTex = applyAlbedoMap('cobble', createCobblestoneTexture(), 35);
+  const sandTex = applyAlbedoMap('sand', createSandTexture(), 40);
+  const dirtTex = applyAlbedoMap('dirt', createDirtTexture(), 40);
+  const iceTex = applyAlbedoMap('ice', createIceTexture(), 40);
+  const magmaTex = applyAlbedoMap('magma', createMagmaTexture(), 35);
+  const cyberGlassTex = applyAlbedoMap('cyber', createCyberGlassTexture(), 40);
 
-  const asphaltMat = new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.75, metalness: 0.1 });
-  const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.85, metalness: 0.15 });
-  const cobbleMat = new THREE.MeshStandardMaterial({ map: cobbleTex, roughness: 0.9, metalness: 0.1 });
-  const sandMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 0.95, metalness: 0.05 });
-  const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.92, metalness: 0.1 });
-  const iceMat = new THREE.MeshStandardMaterial({ map: iceTex, roughness: 0.08, metalness: 0.5 });
-  const magmaMat = new THREE.MeshStandardMaterial({ map: magmaTex, emissive: 0xd97706, emissiveIntensity: 0.6, roughness: 0.7, metalness: 0.2 });
-  const glassMat = new THREE.MeshStandardMaterial({ map: cyberGlassTex, transparent: true, opacity: 0.88, roughness: 0.1, metalness: 0.6 });
-  const cyberGridMat = new THREE.MeshStandardMaterial({ map: cyberGlassTex, emissive: 0x06b6d4, emissiveIntensity: 0.8, roughness: 0.2, metalness: 0.7 });
+  const asphaltMat = new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.62, metalness: 0.18, envMapIntensity: 0.7 });
+  const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.82, metalness: 0.08, envMapIntensity: 0.35 });
+  const cobbleMat = new THREE.MeshStandardMaterial({ map: cobbleTex, roughness: 0.88, metalness: 0.12, envMapIntensity: 0.4 });
+  const sandMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 0.94, metalness: 0.04, envMapIntensity: 0.25 });
+  const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.9, metalness: 0.08, envMapIntensity: 0.3 });
+  const iceMat = new THREE.MeshPhysicalMaterial({ map: iceTex, roughness: 0.12, metalness: 0.35, clearcoat: 0.55, clearcoatRoughness: 0.2, envMapIntensity: 1.1 });
+  const magmaMat = new THREE.MeshStandardMaterial({ map: magmaTex, emissive: 0xd97706, emissiveIntensity: 0.85, roughness: 0.55, metalness: 0.22, envMapIntensity: 0.5 });
+  const glassMat = new THREE.MeshPhysicalMaterial({ map: cyberGlassTex, transparent: true, opacity: 0.9, roughness: 0.12, metalness: 0.55, transmission: 0.18, envMapIntensity: 1.0 });
+  const cyberGridMat = new THREE.MeshStandardMaterial({ map: cyberGlassTex, emissive: 0x06b6d4, emissiveIntensity: 1.05, roughness: 0.22, metalness: 0.65, envMapIntensity: 0.9 });
 
   const roadMaterials = [asphaltMat, woodMat, cobbleMat, sandMat, dirtMat, iceMat, magmaMat, glassMat, cyberGridMat];
   const trackMesh = new THREE.Mesh(roadGeo, roadMaterials);
@@ -3732,7 +3733,7 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
 
   // CODE PERF: static world — skip matrix updates every frame
   const freezeStatic = (root: THREE.Object3D) => {
-    root.traverse((obj) => {
+    root.traverse((obj: THREE.Object3D) => {
       obj.matrixAutoUpdate = false;
       obj.updateMatrix();
     });
@@ -3745,19 +3746,19 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
 
   // Re-enable matrix updates for animated pieces (item boxes, water, boost pads, lighthouse, hazards, stunt rings)
   itemBoxes.forEach((b) => {
-    b.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
+    b.mesh.traverse((o: THREE.Object3D) => { o.matrixAutoUpdate = true; });
   });
   boostPads.forEach((p) => {
-    p.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
+    p.mesh?.traverse((o: THREE.Object3D) => { o.matrixAutoUpdate = true; });
   });
   jumpRamps.forEach((r) => {
-    r.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
+    r.mesh?.traverse((o: THREE.Object3D) => { o.matrixAutoUpdate = true; });
   });
   stuntRings.forEach((sr) => {
-    sr.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
+    sr.mesh?.traverse((o: THREE.Object3D) => { o.matrixAutoUpdate = true; });
   });
   hazards.forEach((h) => {
-    h.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
+    h.mesh?.traverse((o: THREE.Object3D) => { o.matrixAutoUpdate = true; });
   });
   if (waterMesh) {
     waterMesh.matrixAutoUpdate = true;

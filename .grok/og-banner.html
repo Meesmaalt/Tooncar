@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face {
+    font-family: Race;
+    src: url("file:///usr/share/fonts/truetype/liberation/LiberationSansNarrow-Bold.ttf") format("truetype");
+    font-weight: 700;
+  }
+  html, body { margin: 0; padding: 0; background: #0c0d10; }
+  .stage {
+    width: 1200px;
+    height: 264px;
+    position: relative;
+    overflow: hidden;
+    background: #0c0d10;
+  }
+  .sky {
+    position: absolute; inset: 0 0 28% 0;
+    background:
+      radial-gradient(ellipse 34% 64% at 80% 18%, rgba(255,232,170,0.5) 0%, transparent 60%),
+      linear-gradient(180deg, #0c0d10 0%, #1a2230 55%, #b88858 100%);
+  }
+  .sun {
+    position: absolute;
+    width: 54px; height: 54px; border-radius: 50%;
+    left: 76%; top: 7%;
+    background: radial-gradient(circle at 38% 36%, #fffdf2 0%, #ffe08a 42%, #f0c27a 78%, rgba(240,194,122,0) 100%);
+    box-shadow: 0 0 36px 14px rgba(255,224,140,0.45);
+  }
+  .ocean {
+    position: absolute; left: 0; right: 0; top: 48%; height: 22%;
+    background: linear-gradient(180deg, #5aaac4 0%, #1a6b88 55%, #0e3d52 100%);
+  }
+  .beach {
+    position: absolute; left: 0; right: 0; top: 66%; height: 10%;
+    background: linear-gradient(180deg, #c4a06a 0%, #8a6a3e 100%);
+  }
+  .track-wrap {
+    position: absolute;
+    left: -10%; right: -10%; bottom: -20%;
+    height: 52%;
+    perspective: 180px;
+  }
+  .track {
+    width: 100%; height: 160%;
+    transform: rotateX(62deg);
+    transform-origin: 50% 0%;
+    background-image:
+      linear-gradient(90deg, transparent 48.8%, #c8ccd4 48.8%, #c8ccd4 51.2%, transparent 51.2%),
+      url("file:///workspace/.grok/og-refs/asphalt.jpg");
+    background-size: 100% 100%, 220px 220px;
+  }
+  .vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 30% 40%, transparent 40%, rgba(12,13,16,0.5) 100%);
+    z-index: 8; pointer-events: none;
+  }
+  .art, .lockup { position: absolute; inset: 0; }
+  .art { z-index: 4; }
+  .lockup { z-index: 12; pointer-events: none; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="sky"></div>
+    <div class="sun"></div>
+    <div class="ocean"></div>
+    <div class="beach"></div>
+    <div class="track-wrap"><div class="track"></div></div>
+    <svg class="art" viewBox="0 0 1200 264" xmlns="http://www.w3.org/2000/svg">
+      <g transform="translate(18,28) scale(0.55)">
+        <path d="M28 190 C26 120, 34 70, 40 18" stroke="#5a3a1e" stroke-width="14" fill="none" stroke-linecap="round"/>
+        <path d="M40 22 C-10 8, -24 40, 8 48 C4 22, 22 18, 40 22" fill="#2f6a3a"/>
+        <path d="M40 18 C88 0, 110 28, 78 46 C86 20, 58 10, 40 18" fill="#3d8a49"/>
+        <path d="M42 20 C70 -28, 108 -10, 86 24 C74 -2, 52 8, 42 20" fill="#2a6234"/>
+      </g>
+      <g opacity="0.9">
+        <rect x="700" y="92" width="6" height="48" fill="#c8ccd4"/>
+        <rect x="860" y="92" width="6" height="48" fill="#c8ccd4"/>
+        <rect x="692" y="86" width="182" height="12" rx="2" fill="#8a909a" stroke="#c8ccd4"/>
+        <circle cx="720" cy="92" r="3.5" fill="#c24141"/>
+        <circle cx="760" cy="92" r="3.5" fill="#c24141"/>
+        <circle cx="800" cy="92" r="3.5" fill="#c24141"/>
+        <circle cx="840" cy="92" r="3.5" fill="#c24141"/>
+      </g>
+      <g opacity="0.3" fill="#c8ccd4">
+        <ellipse cx="780" cy="232" rx="80" ry="14"/>
+        <ellipse cx="860" cy="226" rx="50" ry="10"/>
+      </g>
+      <g transform="translate(720,78) rotate(-10) scale(0.72)">
+        <ellipse cx="92" cy="168" rx="50" ry="50" fill="#0c0d10"/>
+        <ellipse cx="92" cy="168" rx="50" ry="50" fill="none" stroke="#c8ccd4" stroke-width="7"/>
+        <ellipse cx="92" cy="168" rx="22" ry="22" fill="#1a1d24"/>
+        <ellipse cx="92" cy="168" rx="8" ry="8" fill="#c8ccd4"/>
+        <path d="M48 150 C60 108, 110 86, 168 82 C236 78, 292 98, 318 128 C338 148, 332 168, 300 176 L86 186 C52 184, 40 168, 48 150 Z" fill="#9b2e2e"/>
+        <path d="M58 144 C70 108, 118 90, 174 88 C238 86, 290 104, 310 132 C326 150, 314 164, 284 168 L92 176 C62 174, 50 160, 58 144 Z" fill="#c24141"/>
+        <path d="M90 112 C130 96, 200 94, 250 110 C220 118, 150 122, 90 112 Z" fill="#e05a5a"/>
+        <path d="M148 100 C168 78, 214 74, 242 92 C230 114, 186 120, 148 100 Z" fill="#1a1d24"/>
+        <path d="M158 98 C174 84, 210 82, 230 94 C220 108, 186 112, 158 98 Z" fill="#7ec8e0" opacity="0.85"/>
+        <ellipse cx="196" cy="90" rx="22" ry="20" fill="#c8ccd4"/>
+        <ellipse cx="200" cy="88" rx="12" ry="10" fill="#1a1d24"/>
+        <rect x="54" y="96" width="64" height="10" rx="3" fill="#c8ccd4"/>
+        <path d="M250 132 L312 140 L300 158 L244 150 Z" fill="#c8ccd4"/>
+        <ellipse cx="286" cy="176" rx="38" ry="38" fill="#0c0d10"/>
+        <ellipse cx="286" cy="176" rx="38" ry="38" fill="none" stroke="#c8ccd4" stroke-width="6"/>
+        <ellipse cx="286" cy="176" rx="16" ry="16" fill="#1a1d24"/>
+      </g>
+    </svg>
+    <svg class="lockup" viewBox="0 0 1200 264" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="pop" x="-10%" y="-30%" width="120%" height="180%">
+          <feDropShadow dx="0" dy="4" stdDeviation="0" flood-color="#0c0d10"/>
+          <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0c0d10" flood-opacity="0.5"/>
+        </filter>
+      </defs>
+      <g text-anchor="start" font-family="Race, Liberation Sans Narrow, sans-serif" font-weight="700" filter="url(#pop)">
+        <text x="48" y="76" font-size="70" letter-spacing="3" fill="#c8ccd4" stroke="#c24141" stroke-width="9" paint-order="stroke fill">ToonCar</text>
+        <text x="48" y="128" font-size="54" letter-spacing="14" fill="#c24141" stroke="#c8ccd4" stroke-width="8" paint-order="stroke fill">GP</text>
+      </g>
+    </svg>
+    <div class="vignette"></div>
+  </div>
+</body>
+</html>

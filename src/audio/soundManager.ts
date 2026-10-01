@@ -67,6 +67,17 @@ class SoundManager {
       }
 
       this.startEngineSound();
+
+      const resume = () => {
+        if (this.ctx && this.ctx.state === 'suspended') {
+          void this.ctx.resume();
+        }
+      };
+      window.addEventListener('pointerdown', resume, { once: true });
+      window.addEventListener('keydown', resume, { once: true });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') resume();
+      });
     } catch (e) {
       console.warn("Web Audio not supported or blocked", e);
     }
