@@ -555,11 +555,11 @@ export const HUD: React.FC<HUDProps> = ({
       </div>
 
       {/* Center Left: Live Combat Events Feed */}
-      <div className="max-w-sm space-y-1.5 self-start">
-        {combatEvents.slice(-3).map((evt, idx) => (
+      <div className="max-w-sm space-y-1.5 self-start pointer-events-none">
+        {combatEvents.slice(-2).map((evt, idx) => (
           <div
             key={idx}
-            className="bg-slate-950/80 backdrop-blur-sm border border-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-md flex items-center gap-2 animate-fade-in"
+            className="bg-slate-950/85 backdrop-blur-sm border border-slate-700/80 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2 animate-fade-in transition-all"
           >
             <span>{evt}</span>
           </div>

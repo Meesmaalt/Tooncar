@@ -1,14 +1,271 @@
 import * as THREE from 'three';
-import { TrackDefinition } from '../types';
+import { TrackDefinition, JumpRamp, TrackHazard, StuntRing } from '../types';
+
+class TurtlePath {
+  x: number = 0;
+  y: number = 0;
+  z: number = 0;
+  heading: number = 0;
+  points: [number, number, number][] = [];
+
+  constructor(startX = 0, startY = 0, startZ = 0, startHeading = 0) {
+    this.x = startX;
+    this.y = startY;
+    this.z = startZ;
+    this.heading = startHeading;
+    this.points.push([this.x, this.y, this.z]);
+  }
+
+  forward(dist: number, elevationChange = 0, resolution = 15) {
+    const steps = Math.max(1, Math.ceil(dist / resolution));
+    const stepDist = dist / steps;
+    const stepY = elevationChange / steps;
+    const rad = this.heading * Math.PI / 180;
+    
+    for (let i = 0; i < steps; i++) {
+      this.x += Math.sin(rad) * stepDist;
+      this.z += Math.cos(rad) * stepDist;
+      this.y += stepY;
+      this.points.push([this.x, this.y, this.z]);
+    }
+  }
+
+  turn(angle: number, radius: number, elevationChange = 0, resolution = 15) {
+    const arcLen = (Math.abs(angle) / 360) * 2 * Math.PI * radius;
+    const steps = Math.max(1, Math.ceil(arcLen / resolution));
+    const stepAngle = angle / steps;
+    const stepY = elevationChange / steps;
+    
+    for (let i = 0; i < steps; i++) {
+      const startRad = this.heading * Math.PI / 180;
+      const dir = angle > 0 ? 1 : -1;
+      const centerHeading = startRad + dir * Math.PI / 2;
+      const cx = this.x + Math.sin(centerHeading) * radius;
+      const cz = this.z + Math.cos(centerHeading) * radius;
+      
+      this.heading = (this.heading + stepAngle) % 360;
+      const endRad = this.heading * Math.PI / 180;
+      
+      this.x = cx - Math.sin(endRad + dir * Math.PI / 2) * radius;
+      this.z = cz - Math.cos(endRad + dir * Math.PI / 2) * radius;
+      this.y += stepY;
+      
+      this.points.push([this.x, this.y, this.z]);
+    }
+  }
+
+  /**
+   * Smoothly bridges the track back to (0, 0, -straightApproach) facing exactly forward along +Z,
+   * then adds a flat, straight approach right into the start line (0, 0, 0).
+   * This guarantees that every track starts and finishes in the exact same forward direction,
+   * with perfectly aligned grid slots and no orientation anomalies.
+   */
+  closeTrack(straightApproach = 90, resolution = 18): [number, number, number][] {
+    const p0 = new THREE.Vector3(this.x, this.y, this.z);
+    const curRad = (this.heading * Math.PI) / 180;
+    const p1 = new THREE.Vector3(0, 0, -straightApproach);
+    const distToTarget = p0.distanceTo(p1);
+    const tanScale = Math.max(55, distToTarget * 0.65);
+    const v0 = new THREE.Vector3(Math.sin(curRad), 0, Math.cos(curRad)).multiplyScalar(tanScale);
+    const v1 = new THREE.Vector3(0, 0, 1).multiplyScalar(tanScale);
+
+    const bridgeSteps = Math.max(4, Math.ceil(distToTarget / resolution));
+    for (let i = 1; i <= bridgeSteps; i++) {
+      const t = i / bridgeSteps;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const h00 = 2 * t3 - 3 * t2 + 1;
+      const h10 = t3 - 2 * t2 + t;
+      const h01 = -2 * t3 + 3 * t2;
+      const h11 = t3 - t2;
+      const x = h00 * p0.x + h10 * v0.x + h01 * p1.x + h11 * v1.x;
+      const y = h00 * p0.y + h10 * v0.y + h01 * p1.y + h11 * v1.y;
+      const z = h00 * p0.z + h10 * v0.z + h01 * p1.z + h11 * v1.z;
+      this.points.push([x, y, z]);
+    }
+
+    const straightSteps = Math.max(2, Math.floor(straightApproach / resolution));
+    for (let i = 1; i < straightSteps; i++) {
+      const frac = i / straightSteps;
+      const z = -straightApproach + frac * straightApproach;
+      this.points.push([0, 0, z]);
+    }
+
+    return this.points;
+  }
+}
+
+function generateGrandPrixPoints(): [number, number, number][] {
+  const t = new TurtlePath(0, 0, 0);
+  t.forward(360, 0); // Start straight
+  t.turn(90, 130, 10); // Ascending climb to Ocean Bridge
+  t.turn(-35, 90, 4); // S-curve climb
+  t.turn(35, 90, 4); // Straighten onto Bridge (y = 18m)
+  t.forward(260, 0); // High Ocean Bridge straight
+  t.turn(90, 130, -10); // Coastal drop
+  t.forward(220, -8); // Shipwreck cove dip (y = 0m)
+  t.turn(-40, 85, 0); // Palm beach chicane left
+  t.turn(40, 85, 0); // Palm beach chicane right
+  t.turn(90, 120, 0); // Cove sweep
+  t.forward(220, 0); // Lighthouse tunnel straight
+  t.turn(90, 120, 0); // Final hairpin right to the start
+  return t.closeTrack(90);
+}
+
+function generateSpookyPoints(): [number, number, number][] {
+  const t = new TurtlePath(0, 0, 0);
+  t.forward(300, 0); // Castle courtyard start
+  t.turn(90, 110, 12); // Fortress rampart climb
+  t.forward(220, 8); // Battlements high straight (y = 20m)
+  t.turn(45, 80, -2); // Drawbridge chasm jump approach
+  t.turn(-45, 80, -2); // Chasm leap
+  t.forward(160, -4); // Tower descent (y = 12m)
+  t.turn(90, 110, -8); // Descent into dungeon crypt
+  t.forward(250, -4); // Dungeon catacomb tunnel (y = 0m)
+  t.turn(90, 100, 0); // Swinging Pendulum Guillotines section
+  t.turn(-40, 75, 0); // Crypt chicane left
+  t.turn(40, 75, 0); // Crypt chicane right
+  t.forward(220, 0); // Cemetery straight past ghosts & pumpkins
+  t.turn(90, 110, 0); // Final castle gate curve
+  return t.closeTrack(90);
+}
+
+function generateCyberPoints(): [number, number, number][] {
+  const t = new TurtlePath(0, 0, 0);
+  t.forward(320, 0); // Neon downtown start
+  t.turn(-90, 130, 14); // Anti-gravity magnetic climb
+  t.forward(240, 12); // High-altitude Zero-G skyway (y = 26m)
+  t.forward(200, 0); // Glass highway
+  t.turn(-90, 120, -16); // Supersonic canyon dive
+  t.forward(200, -8); // Canyon floor (y = 2m)
+  t.turn(45, 90, 0); // Hyper-Launch Ramp across canyon
+  t.turn(-45, 90, 0); // Mid-air trajectory
+  t.forward(240, 0); // Neon speedway
+  t.turn(-90, 130, 0); // Banked 180 loop
+  t.forward(260, 0); // Holographic warp tunnel
+  t.turn(-90, 120, 0); // Final neon straight
+  return t.closeTrack(90);
+}
+
+function generateIcePoints(): [number, number, number][] {
+  const t = new TurtlePath(0, 0, 0);
+  t.forward(300, 0); // Basecamp start
+  t.turn(90, 110, 12); // Alpine mountain switchback 1
+  t.turn(-40, 80, 8); // Switchback 2
+  t.turn(40, 80, 6); // Summit ridge pass (y = 26m)
+  t.forward(220, 0); // Frozen giant mammoth straight
+  t.turn(90, 120, -14); // Mega Ski-Jump Ramp over glacial gorge
+  t.forward(200, -6); // Shimmering Crystal Cavern entrance (y = 6m)
+  t.turn(90, 110, -4); // Cavern slide
+  t.turn(-40, 80, 0); // Ice stalactite chicane
+  t.turn(40, 80, 0); // Cavern exit (y = 2m)
+  t.forward(240, -2); // Glacier lake sprint
+  t.turn(90, 110, 0); // Avalanche hairpin
+  return t.closeTrack(90);
+}
+
+function generateVolcanoPoints(): [number, number, number][] {
+  const t = new TurtlePath(0, 0, 0);
+  t.forward(320, 0); // Ash wasteland start
+  t.turn(90, 120, 14); // Caldera rim climb
+  t.forward(240, 10); // Volcano rim straight overlooking lava lake (y = 24m)
+  t.turn(90, 120, -8); // Caldera Leap Jump Ramp
+  t.forward(220, -6); // Magma lake flyover (y = 10m)
+  t.turn(90, 110, -8); // Subterranean basalt magma tunnel
+  t.forward(250, -2); // Magma river bridge (y = 0m)
+  t.turn(-40, 80, 0); // Obsidian S-bends left
+  t.turn(40, 80, 0); // Obsidian S-bends right
+  t.turn(90, 110, 0); // Erupting geyser straight
+  return t.closeTrack(90);
+}
+
+function generateSkyPoints(): [number, number, number][] {
+  const t = new TurtlePath(0, 0, 0);
+  t.forward(350, 0); // Cloud terminal start
+  t.turn(-90, 130, 16); // Solar helix spiral climb
+  t.forward(240, 12); // High sky dock straight (y = 28m)
+  t.turn(-90, 140, -12); // Stratosphere Jump Ramp between floating sky islands
+  t.forward(260, -6); // Cloud-surfing downhill straight (y = 10m)
+  t.turn(40, 90, 0); // Floating solar sail chicane left
+  t.turn(-40, 90, 0); // Floating solar sail chicane right
+  t.forward(220, -4); // Weather satellite approach (y = 6m)
+  t.turn(-90, 130, -4); // Orbital satellite banking turn 1
+  t.turn(-90, 130, -2); // Orbital satellite banking turn 2 (y = 0m)
+  return t.closeTrack(90);
+}
 
 export const TRACK_DEFINITIONS: TrackDefinition[] = [
   {
+    id: 'sunny_beach',
+    name: 'Päikeseranna Grand Prix (Sunny Beach)',
+    theme: 'beach',
+    difficulty: 'Medium',
+    description: 'Täiuslikult sujuv ja matemaatiliselt täpne Grand Prix ringrada. Pikad kiired sirged, kõrge sild ja professionaalsed S-kurvid pakuvad tõelist sõiduelamust.',
+    lengthMeters: 4200,
+    lapsDefault: 3,
+    skyColor: 0x38bdf8,
+    fogColor: 0xbae6fd,
+    groundColor: 0xfef08a,
+    trackColor: 0x334155,
+    curbColorA: 0xef4444,
+    curbColorB: 0xffffff,
+    points: generateGrandPrixPoints() as any,
+  },
+  {
+    id: 'spooky_castle',
+    name: 'Kummituslossi Ralli (Spooky Castle)',
+    theme: 'spooky',
+    difficulty: 'Medium',
+    description: 'Keskaegne lossitee: Udused kalmistud, iidsed kindluseväravad, tõstesild ja valgustatud kõrvitsad!',
+    lengthMeters: 4200,
+    lapsDefault: 3,
+    skyColor: 0x090d16,
+    fogColor: 0x1e1b4b,
+    groundColor: 0x1e293b,
+    trackColor: 0x18181b,
+    curbColorA: 0xa855f7,
+    curbColorB: 0x22c55e,
+    points: generateSpookyPoints() as any,
+  },
+  {
+    id: 'cyber_canyon',
+    name: 'Küberkanjoni Magistraal (Cyber Canyon)',
+    theme: 'cyber',
+    difficulty: 'Medium',
+    description: 'Futuristlik neoon-megapolis: Hologrammid, kiired klaassillad, laser-hüpertunnel ja pilvelõhkujate kanjon!',
+    lengthMeters: 4400,
+    lapsDefault: 3,
+    skyColor: 0x020617,
+    fogColor: 0x0f172a,
+    groundColor: 0x090d16,
+    trackColor: 0x0f172a,
+    curbColorA: 0x06b6d4,
+    curbColorB: 0xf43f5e,
+    points: generateCyberPoints() as any,
+  },
+  {
+    id: 'frozen_peak',
+    name: 'Külmunud Liustik (Frozen Peak Glacier)',
+    theme: 'ice',
+    difficulty: 'Hard',
+    description: 'Lumised mäetipud: Libe liustikujää, lumememmed, talvised männimetsad ja kristallkoopad!',
+    lengthMeters: 4600,
+    lapsDefault: 3,
+    skyColor: 0xbae6fd,
+    fogColor: 0xe0f2fe,
+    groundColor: 0xf1f5f9,
+    trackColor: 0x334155,
+    curbColorA: 0x38bdf8,
+    curbColorB: 0xf8fafc,
+    points: generateIcePoints() as any,
+  },
+  {
     id: 'volcano_island',
-    name: 'Kraatrisügavik (Abyssal Caldera GP)',
+    name: 'Kraatrisügavik GP (Abyssal Caldera)',
     theme: 'volcano',
     difficulty: 'Hard',
-    description: 'Eksklusiivne vulkaanirada: Sügav magma-kanjon, +45m tsentraalne spiraaltõus, kitsas laavasild ja ohtlikud asfaldimurrud!',
-    lengthMeters: 3800,
+    description: 'Võimas vulkaanirada: Hõõguvad laavajõed, dinosauruse luustikukaar, basaltsambad ja voolav kaldeera!',
+    lengthMeters: 4500,
     lapsDefault: 3,
     skyColor: 0x450a0a,
     fogColor: 0x7f1d1d,
@@ -16,47 +273,24 @@ export const TRACK_DEFINITIONS: TrackDefinition[] = [
     trackColor: 0x27272a,
     curbColorA: 0xf97316,
     curbColorB: 0xef4444,
-    points: [
-      // 1. Basaltkanjoni stardisirge (madalal kraatri põhjas)
-      [0, 0, -250],
-      [0, 0, -100],
-      [0, 0, 50],
-      
-      // 2. Magmakoobaste tehniline S-šikaan (kerge langus laavajärvele)
-      [-40, -4.0, 150],
-      [60, -6.0, 240],
-      [-50, -8.0, 320],
-      
-      // 3. Tsentraalne hiiglaslik spiraaltõus ümber vulkaanikoonuse (+45m tippu)
-      [100, -2.0, 420],
-      [300, 12.0, 380],
-      [420, 26.0, 200],
-      [350, 38.0, 20],
-      [220, 45.0, -80],
-      
-      // 4. Kitsas ja sirge laavasild otse üle kaldeera kraatri
-      [100, 45.0, -90],
-      [-100, 45.0, -90],
-      [-200, 44.0, -70],
-      
-      // 5. Ülikiire vabalangusega allamäge sektsioon (tuhaväljadele)
-      [-320, 30.0, 20],
-      [-400, 12.0, 120],
-      [-350, 2.0, 240],
-      
-      // 6. Fossiilse leviataani skeletialune lai Parabolica (drifti sektsioon)
-      [-220, 0.0, 320],
-      [-100, 0.0, 350],
-      [-20, 0.0, 300],
-      
-      // 7. Geisrite ja basaltsammaste vaheline tagasitee kanjonisse
-      [20, 0.0, 200],
-      [-80, 0.0, 100],
-      [-20, 0.0, -50],
-      [0, 0.0, -150],
-      [0, 0.0, -250]
-    ],
+    points: generateVolcanoPoints() as any,
   },
+  {
+    id: 'sky_metropolis',
+    name: 'Taevalinnaku Kiirtee (Sky Metropolis)',
+    theme: 'sky',
+    difficulty: 'Hard',
+    description: 'Stratosfääri pilvemagistraal: Läbipaistvad klaassillad, päikesepaneelid, hõljuvad kosmosejaamad ja pilvemeri!',
+    lengthMeters: 4800,
+    lapsDefault: 3,
+    skyColor: 0x0284c7,
+    fogColor: 0x38bdf8,
+    groundColor: 0xf0fdf4,
+    trackColor: 0x1e293b,
+    curbColorA: 0xfacc15,
+    curbColorB: 0x38bdf8,
+    points: generateSkyPoints() as any,
+  }
 ];
 
 export interface ItemBoxPosition {
@@ -131,6 +365,9 @@ export interface TrackData {
   getCenterlinePointAt: (t: number) => CenterlinePoint;
   itemBoxes: ItemBoxPosition[];
   boostPads: BoostPadPosition[];
+  jumpRamps: JumpRamp[];
+  hazards: TrackHazard[];
+  stuntRings: StuntRing[];
   decorations: THREE.Group;
   trackMesh: THREE.Object3D;
   curbsMesh: THREE.Group;
@@ -1261,14 +1498,8 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
 
     // Zone boundaries (strict and impenetrable — vehicles cannot clip into walls or terrain)
     // road | curb | crash barrier rail
-        let isElevatedBridge = _resClosestPt.y > 3.2;
-    if (trackDef.theme === 'volcano') {
-       isElevatedBridge = _resClosestPt.y > 42.0; // Only the main lava bridge at 45m
-    }
-        let isCliffEdge = (finalT > 0.08 && finalT < 0.28) || (finalT > 0.70 && finalT < 0.88);
-    if (trackDef.theme === 'volcano') {
-      isCliffEdge = (finalT > 0.30 && finalT < 0.50) || (finalT > 0.50 && finalT < 0.70); // Spiral climb and fast descent
-    }
+    const isElevatedBridge = _resClosestPt.y > 3.0;
+    const isCliffEdge = (finalT > 0.15 && finalT < 0.35) || (finalT > 0.65 && finalT < 0.85);
 
     
     // Tunnel bounds
@@ -1628,21 +1859,19 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
   startStrip.position.set(0, 0.06, 0);
   startArch.add(startStrip);
 
-  // Starting grid boxes on road behind the start line
-  const gridBoxGeo = new THREE.PlaneGeometry(3.0, 4.5);
+  // Starting grid boxes on road behind the start line (6 boxes matching 6 racer slots)
+  const gridBoxGeo = new THREE.PlaneGeometry(3.0, 4.8);
   const gridBoxMat = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     wireframe: true,
   });
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 2; col++) {
-      const gBox = new THREE.Mesh(gridBoxGeo, gridBoxMat);
-      const sideX = (col === 0 ? -1 : 1) * 3.4;
-      const backZ = -(row * 7.5 + 4.5);
-      gBox.rotation.x = -Math.PI / 2;
-      gBox.position.set(sideX, 0.07, backZ);
-      startArch.add(gBox);
-    }
+  for (let slot = 0; slot < 6; slot++) {
+    const gBox = new THREE.Mesh(gridBoxGeo, gridBoxMat);
+    const sideX = (slot % 2 === 0 ? -1 : 1) * 2.8;
+    const backZ = -(slot * 7.0 + 4.5);
+    gBox.rotation.x = -Math.PI / 2;
+    gBox.position.set(sideX, 0.07, backZ);
+    startArch.add(gBox);
   }
 
   // Grand Start Gantry Overhead Arch (generous outer clearance)
@@ -1821,6 +2050,309 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
       z: pt.z,
       rotY,
       mesh: padGroup,
+    });
+  });
+
+  // 6. Thrilling Jump Ramps — Launches karts airborne for mid-air stunts!
+  const jumpRamps: JumpRamp[] = [];
+  const rampStations = [0.18, 0.48, 0.76];
+
+  rampStations.forEach(t => {
+    const pt = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).normalize();
+    const rotY = Math.atan2(tangent.x, tangent.z);
+
+    const rampGroup = new THREE.Group();
+    rampGroup.position.set(pt.x, pt.y, pt.z);
+    rampGroup.rotation.y = rotY;
+
+    const rampWidth = 9.0;
+    const rampLength = 6.5;
+    const rampHeight = 2.2;
+
+    // Wedge Geometry (sloped ramp)
+    const rampShape = new THREE.Shape();
+    rampShape.moveTo(-rampLength / 2, 0);
+    rampShape.lineTo(rampLength / 2, rampHeight);
+    rampShape.lineTo(rampLength / 2, 0);
+    rampShape.closePath();
+
+    const extrudeSettings = {
+      depth: rampWidth,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      steps: 1,
+      bevelSize: 0.1,
+      bevelThickness: 0.1,
+    };
+
+    const rampGeo = new THREE.ExtrudeGeometry(rampShape, extrudeSettings);
+    rampGeo.center();
+    // Align ramp along forward Z
+    rampGeo.rotateY(Math.PI / 2);
+
+    const rampMat = new THREE.MeshStandardMaterial({
+      color: trackDef.theme === 'cyber' ? 0x06b6d4 : (trackDef.theme === 'ice' ? 0x38bdf8 : (trackDef.theme === 'volcano' ? 0xf97316 : 0xf59e0b)),
+      roughness: 0.3,
+      metalness: 0.7,
+    });
+
+    const rampMesh = new THREE.Mesh(rampGeo, rampMat);
+    rampMesh.position.y = rampHeight * 0.48;
+    rampGroup.add(rampMesh);
+
+    // Glowing Booster Chevron Arrows on the ramp face
+    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xfffbeb });
+    for (let a = -1; a <= 1; a++) {
+      const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.4, 3), arrowMat);
+      arrow.rotation.x = -Math.PI / 2 + 0.32;
+      arrow.position.set(a * 2.4, rampHeight * 0.55, 0.4);
+      rampGroup.add(arrow);
+    }
+
+    // Side safety guardrails
+    const railMat = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.8, roughness: 0.2 });
+    [-rampWidth / 2, rampWidth / 2].forEach(sideX => {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.3, rampHeight + 0.6, rampLength), railMat);
+      rail.position.set(sideX, (rampHeight + 0.6) / 2, 0);
+      rampGroup.add(rail);
+    });
+
+    decorations.add(rampGroup);
+
+    jumpRamps.push({
+      x: pt.x,
+      y: pt.y,
+      z: pt.z,
+      rotY,
+      width: rampWidth,
+      jumpForce: 23,
+      boostBonus: 14,
+      mesh: rampGroup,
+    });
+  });
+
+  // 7. Aerial Stunt Rings — Suspended in the air downstream of jumps for bonus turbo!
+  const stuntRings: StuntRing[] = [];
+  const ringStations = [0.21, 0.51, 0.79];
+
+  ringStations.forEach(t => {
+    const pt = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).normalize();
+    const rotY = Math.atan2(tangent.x, tangent.z);
+
+    const ringGroup = new THREE.Group();
+    // Suspended 7.5m in the air directly on the jump flight path
+    const ringY = pt.y + 7.5;
+    ringGroup.position.set(pt.x, ringY, pt.z);
+    ringGroup.rotation.y = rotY;
+
+    // Outer Glowing Torus Ring
+    const torusGeo = new THREE.TorusGeometry(3.6, 0.4, 16, 32);
+    const torusMat = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      emissive: 0xeab308,
+      emissiveIntensity: 1.4,
+      metalness: 0.9,
+      roughness: 0.1,
+    });
+    const torusMesh = new THREE.Mesh(torusGeo, torusMat);
+    ringGroup.add(torusMesh);
+
+    // Rotating Energy Satellite Orbs around the ring
+    const orbGeo = new THREE.SphereGeometry(0.4, 12, 12);
+    const orbMat = new THREE.MeshBasicMaterial({ color: 0x67e8f9 });
+    for (let o = 0; o < 4; o++) {
+      const orb = new THREE.Mesh(orbGeo, orbMat);
+      const angle = (o / 4) * Math.PI * 2;
+      orb.position.set(Math.cos(angle) * 3.6, Math.sin(angle) * 3.6, 0);
+      ringGroup.add(orb);
+    }
+
+    decorations.add(ringGroup);
+
+    stuntRings.push({
+      x: pt.x,
+      y: ringY,
+      z: pt.z,
+      radius: 3.6,
+      pointsBonus: 500,
+      collectedBy: [],
+      mesh: ringGroup,
+    });
+  });
+
+  // 8. Dynamic Interactive Track Hazards — Active moving dangers along the course
+  const hazards: TrackHazard[] = [];
+  const hazardConfigs: { t: number; type: TrackHazard['type']; name: string; speed: number; range: number }[] = [];
+
+  if (trackDef.theme === 'spooky') {
+    // Giant Swinging Pendulum Guillotines in the dungeon section
+    hazardConfigs.push(
+      { t: 0.38, type: 'pendulum', name: 'Hauakambri Lõikur-Pendel', speed: 2.5, range: 6.5 },
+      { t: 0.42, type: 'pendulum', name: 'Nõiutud Raudkirves', speed: 2.8, range: 6.5 },
+      { t: 0.85, type: 'fireball', name: 'Kummitustuli', speed: 3.2, range: 4.5 }
+    );
+  } else if (trackDef.theme === 'cyber') {
+    // Sweeping High-Voltage Laser Barriers across the highway
+    hazardConfigs.push(
+      { t: 0.28, type: 'laser_sweeper', name: 'Küber-Laserbarjäär Alpha', speed: 3.0, range: 7.0 },
+      { t: 0.65, type: 'laser_sweeper', name: 'Küber-Laserbarjäär Beta', speed: 3.5, range: 7.0 }
+    );
+  } else if (trackDef.theme === 'ice') {
+    // Rolling Glacial Snow Boulders
+    hazardConfigs.push(
+      { t: 0.35, type: 'snow_boulder', name: 'Liustiku Hiid-Lumepall', speed: 2.2, range: 5.5 },
+      { t: 0.68, type: 'snow_boulder', name: 'Laviini Jäärahk', speed: 2.6, range: 5.5 }
+    );
+  } else if (trackDef.theme === 'volcano') {
+    // Erupting Magma Geysers & Rolling Lava Fireballs
+    hazardConfigs.push(
+      { t: 0.32, type: 'magma_geyser', name: 'Magma Geiser', speed: 2.0, range: 5.0 },
+      { t: 0.60, type: 'fireball', name: 'Tuline Laavapall', speed: 3.2, range: 6.0 },
+      { t: 0.88, type: 'magma_geyser', name: 'Kraatri Purskekaev', speed: 2.4, range: 5.0 }
+    );
+  } else if (trackDef.theme === 'sky') {
+    hazardConfigs.push(
+      { t: 0.36, type: 'laser_sweeper', name: 'Ioon-Pikselaeng', speed: 3.2, range: 6.0 },
+      { t: 0.70, type: 'laser_sweeper', name: 'Stratosfääri Plasmasild', speed: 3.6, range: 6.0 }
+    );
+  } else {
+    // Beach Water Spout Geysers
+    hazardConfigs.push(
+      { t: 0.36, type: 'water_spout', name: 'Merelaine Geiser', speed: 2.2, range: 5.5 },
+      { t: 0.68, type: 'water_spout', name: 'Rannikupurske Veesein', speed: 2.4, range: 5.5 }
+    );
+  }
+
+  hazardConfigs.forEach((cfg) => {
+    const pt = curve.getPointAt(cfg.t);
+    const tangent = curve.getTangentAt(cfg.t).normalize();
+    const right = new THREE.Vector3().crossVectors(tangent, upVec).normalize();
+    const rotY = Math.atan2(tangent.x, tangent.z);
+
+    const hazardGroup = new THREE.Group();
+    hazardGroup.position.set(pt.x, pt.y, pt.z);
+
+    if (cfg.type === 'pendulum') {
+      // Iron Arch + Swinging Chain + Guillotine Blade
+      const archGeo = new THREE.CylinderGeometry(0.3, 0.3, 11, 8);
+      const archMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.3 });
+      
+      const leftPillar = new THREE.Mesh(archGeo, archMat);
+      leftPillar.position.set(-right.x * 6.5, 5.5, -right.z * 6.5);
+      hazardGroup.add(leftPillar);
+
+      const rightPillar = new THREE.Mesh(archGeo, archMat);
+      rightPillar.position.set(right.x * 6.5, 5.5, right.z * 6.5);
+      hazardGroup.add(rightPillar);
+
+      const topBar = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 14, 8), archMat);
+      topBar.rotation.z = Math.PI / 2;
+      topBar.position.y = 10.5;
+      hazardGroup.add(topBar);
+
+      // Swinging Axe Pendulum Child Group
+      const swingArm = new THREE.Group();
+      swingArm.position.y = 10.5;
+      swingArm.name = 'swing_arm';
+
+      const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 8.5, 6), archMat);
+      chain.position.y = -4.25;
+      swingArm.add(chain);
+
+      // Huge Crescent Axe Blade
+      const bladeGeo = new THREE.CylinderGeometry(2.4, 2.4, 0.18, 16, 1, false, 0, Math.PI);
+      const bladeMat = new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        metalness: 0.95,
+        roughness: 0.1,
+        emissive: 0xdc2626,
+        emissiveIntensity: 0.25,
+      });
+      const blade = new THREE.Mesh(bladeGeo, bladeMat);
+      blade.rotation.x = Math.PI / 2;
+      blade.position.y = -8.5;
+      swingArm.add(blade);
+
+      hazardGroup.add(swingArm);
+    } else if (cfg.type === 'laser_sweeper') {
+      // Dual Neon Cyber Pylons with sweeping pulsing laser
+      const pylonMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
+      const pylonGeo = new THREE.BoxGeometry(0.9, 4.5, 0.9);
+
+      const pLeft = new THREE.Mesh(pylonGeo, pylonMat);
+      pLeft.position.set(-right.x * 6.0, 2.25, -right.z * 6.0);
+      hazardGroup.add(pLeft);
+
+      const pRight = new THREE.Mesh(pylonGeo, pylonMat);
+      pRight.position.set(right.x * 6.0, 2.25, right.z * 6.0);
+      hazardGroup.add(pRight);
+
+      // Sweeping Laser Beam Group
+      const laserArm = new THREE.Group();
+      laserArm.name = 'laser_beam';
+      const laserGeo = new THREE.CylinderGeometry(0.2, 0.2, 12, 8);
+      laserGeo.rotateZ(Math.PI / 2);
+      const laserMat = new THREE.MeshBasicMaterial({ color: 0xff0055 });
+      const laserMesh = new THREE.Mesh(laserGeo, laserMat);
+      laserMesh.position.y = 1.6;
+      laserArm.add(laserMesh);
+
+      hazardGroup.add(laserArm);
+    } else if (cfg.type === 'snow_boulder') {
+      // Giant Rolling Snow Boulder
+      const boulderMat = new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        roughness: 0.8,
+        metalness: 0.1,
+      });
+      const boulderMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(2.4, 1), boulderMat);
+      boulderMesh.position.y = 2.4;
+      boulderMesh.name = 'rolling_boulder';
+      hazardGroup.add(boulderMesh);
+    } else if (cfg.type === 'magma_geyser' || cfg.type === 'water_spout') {
+      // Erupting Column
+      const isMagma = cfg.type === 'magma_geyser';
+      const spoutMat = new THREE.MeshStandardMaterial({
+        color: isMagma ? 0xf97316 : 0x38bdf8,
+        emissive: isMagma ? 0xef4444 : 0x0284c7,
+        emissiveIntensity: 1.2,
+        transparent: true,
+        opacity: 0.85,
+      });
+      const spout = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.4, 7.0, 12), spoutMat);
+      spout.position.y = 3.5;
+      spout.name = 'erupting_spout';
+      hazardGroup.add(spout);
+    } else {
+      // Fiery Magma Ball
+      const fireballMat = new THREE.MeshStandardMaterial({
+        color: 0xef4444,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 1.6,
+      });
+      const fireball = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 16), fireballMat);
+      fireball.position.y = 2.2;
+      fireball.name = 'fireball_mesh';
+      hazardGroup.add(fireball);
+    }
+
+    decorations.add(hazardGroup);
+
+    hazards.push({
+      id: `hazard_${cfg.t}_${cfg.type}`,
+      type: cfg.type,
+      name: cfg.name,
+      x: pt.x,
+      y: pt.y,
+      z: pt.z,
+      radius: 2.2,
+      active: true,
+      sweepProgress: 0,
+      sweepSpeed: cfg.speed,
+      sweepRange: cfg.range,
+      mesh: hazardGroup,
     });
   });
 
@@ -3042,14 +3574,8 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
     const rotY = Math.atan2(tangent.x, tangent.z);
 
     // Only install safety crash barriers on high bridges or sharp cliff dropoffs
-        let isElevatedBridge = pt.y > 3.2;
-    if (trackDef.theme === 'volcano') {
-       isElevatedBridge = pt.y > 42.0; // Only the main lava bridge at 45m
-    }
-        let isCliffEdge = (t > 0.08 && t < 0.28) || (t > 0.70 && t < 0.88);
-    if (trackDef.theme === 'volcano') {
-      isCliffEdge = (t > 0.30 && t < 0.50) || (t > 0.50 && t < 0.70); // Spiral climb and fast descent
-    }
+    const isElevatedBridge = pt.y > 3.0;
+    const isCliffEdge = (t > 0.15 && t < 0.35) || (t > 0.65 && t < 0.85);
 
     if (isElevatedBridge || isCliffEdge) {
       const railGeo = new THREE.BoxGeometry(0.35, 1.1, 4.4);
@@ -3217,12 +3743,21 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
   if (trackMesh) freezeStatic(trackMesh);
   if (curbsGroup) freezeStatic(curbsGroup);
 
-  // Re-enable matrix updates for animated pieces (item boxes, water, boost pads, lighthouse)
+  // Re-enable matrix updates for animated pieces (item boxes, water, boost pads, lighthouse, hazards, stunt rings)
   itemBoxes.forEach((b) => {
     b.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
   });
   boostPads.forEach((p) => {
     p.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
+  });
+  jumpRamps.forEach((r) => {
+    r.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
+  });
+  stuntRings.forEach((sr) => {
+    sr.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
+  });
+  hazards.forEach((h) => {
+    h.mesh.traverse((o) => { o.matrixAutoUpdate = true; });
   });
   if (waterMesh) {
     waterMesh.matrixAutoUpdate = true;
@@ -3241,6 +3776,9 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
     getCenterlinePointAt,
     itemBoxes,
     boostPads,
+    jumpRamps,
+    hazards,
+    stuntRings,
     decorations,
     trackMesh,
     curbsMesh: curbsGroup,

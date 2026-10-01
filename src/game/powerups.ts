@@ -105,14 +105,14 @@ export const POWER_UPS: Record<PowerUpType, PowerUpInfo> = {
     type: 'freezeray',
     name: 'Jääkülmuti (Cryo)',
     icon: '❄️',
-    description: 'Kiire jääkristallkiir! Külmutab tabatud vastase auto 3 sekundiks libiseva jääkuubiku sisse!',
+    description: 'Kiire krüo-lask otse ettepoole (90 m/s)! Külmutab tabatud vastase 3.5 sekundiks libisevasse jääkuubikusse!',
     rarityWeight: 22,
   },
   plasma_cannon: {
     type: 'plasma_cannon',
     name: 'Plasma Suurtükk',
     icon: '🔮',
-    description: 'Võimas smaragd-roheline energiakuul! Tulistab ülikiirelt ettepoole ja läbistab järjest mitu vastast!',
+    description: 'Ülikiire lineaarne plasma-laserkiir (140 m/s)! Tulistab otse sihtmärgi suunas ja läbistab järjest kõik vastased!',
     rarityWeight: 24,
   },
   oil_slick: {

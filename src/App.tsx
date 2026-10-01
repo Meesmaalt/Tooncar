@@ -299,6 +299,7 @@ export default function App() {
     if (!container) return;
 
     soundManager.init();
+    setCombatEvents([]);
 
     const trackDef = TRACK_DEFINITIONS.find(t => t.id === selectedTrackId) || TRACK_DEFINITIONS[0];
 
@@ -316,7 +317,10 @@ export default function App() {
           }
         },
         onCombatEvent: (msg) => {
-          setCombatEvents(prev => [...prev.slice(-4), msg]);
+          setCombatEvents(prev => [...prev.slice(-1), msg]);
+          setTimeout(() => {
+            setCombatEvents(prev => prev.filter(m => m !== msg));
+          }, 3200);
         },
         onRaceFinished: (results) => {
           setRaceResults(results);

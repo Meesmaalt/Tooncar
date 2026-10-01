@@ -82,6 +82,54 @@ export interface CupStanding {
   stageWins: number;
 }
 
+import type * as THREE from 'three';
+
+export interface JumpRamp {
+  id?: string;
+  x: number;
+  y: number;
+  z: number;
+  rotY: number;
+  width: number;
+  jumpForce: number;
+  boostBonus: number;
+  mesh?: THREE.Object3D;
+}
+
+export interface TrackHazard {
+  id: string;
+  type: 'pendulum' | 'fireball' | 'laser_sweeper' | 'snow_boulder' | 'magma_geyser' | 'water_spout';
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  baseX?: number;
+  baseY?: number;
+  baseZ?: number;
+  radius: number;
+  phase?: number;
+  speed?: number;
+  amplitude?: number;
+  rotY?: number;
+  mesh?: THREE.Object3D;
+  active: boolean;
+  sweepProgress?: number;
+  sweepSpeed?: number;
+  sweepRange?: number;
+}
+
+export interface StuntRing {
+  id?: string;
+  x: number;
+  y: number;
+  z: number;
+  rotY?: number;
+  radius: number;
+  mesh?: THREE.Object3D;
+  pointsBonus?: number;
+  collectedBy: string[];
+}
+
 export interface Projectile {
   id: string;
   type: 'rocket' | 'blue_rocket' | 'thundercloud' | 'banana' | 'mine' | 'anvil' | 'vortex' | 'freezeray' | 'plasma_cannon' | 'oil_slick';
@@ -102,6 +150,11 @@ export interface Projectile {
   hitIds?: string[];
   trackT?: number;
   lateralOffset?: number;
+  lateralSpeed?: number;
+  bounceCount?: number;
+  prevX?: number;
+  prevY?: number;
+  prevZ?: number;
 }
 
 export interface PlayerInput {
@@ -167,6 +220,17 @@ export interface RacerState {
   surfaceIcon?: string;
   trackT?: number;
   centerlineIndex?: number;
+
+  // Airborne & Stunt system
+  isAirborne?: boolean;
+  vy?: number;
+  airTime?: number;
+  stuntTimer?: number;
+  stuntType?: 'flip' | 'spin' | 'barrel_roll' | null;
+  stuntAngleX?: number;
+  stuntAngleY?: number;
+  stuntAngleZ?: number;
+  stuntCompleted?: boolean;
 }
 
 export interface RoomPlayer {

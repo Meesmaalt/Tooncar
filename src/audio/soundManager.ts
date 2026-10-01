@@ -260,6 +260,52 @@ class SoundManager {
     this.scheduleCleanup(noise, [filter, gain], now + 0.55);
   }
 
+  public playStuntChime() {
+    this.init();
+    if (!this.ctx || !this.sfxGain) return;
+    const now = this.ctx.currentTime;
+    // Ascending arpeggio chime for successful stunt tricks
+    const notes = [587.33, 739.99, 880.00, 1174.66];
+    notes.forEach((freq, idx) => {
+      if (!this.ctx || !this.sfxGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+      gain.gain.setValueAtTime(0.28, now + idx * 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.35);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+
+      osc.start(now + idx * 0.05);
+      this.scheduleCleanup(osc, [gain], now + idx * 0.05 + 0.38);
+    });
+  }
+
+  public playStuntRing() {
+    this.init();
+    if (!this.ctx || !this.sfxGain) return;
+    const now = this.ctx.currentTime;
+    // Holographic warp ring chime
+    const notes = [880, 1108.73, 1318.51, 1760];
+    notes.forEach((freq, idx) => {
+      if (!this.ctx || !this.sfxGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.04);
+      gain.gain.setValueAtTime(0.24, now + idx * 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.04 + 0.4);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+
+      osc.start(now + idx * 0.04);
+      this.scheduleCleanup(osc, [gain], now + idx * 0.04 + 0.42);
+    });
+  }
+
   public playTurbo() {
     this.init();
     if (!this.ctx || !this.sfxGain) return;

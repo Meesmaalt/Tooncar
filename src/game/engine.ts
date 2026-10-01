@@ -247,14 +247,17 @@ export class ToonCarEngine {
     this.trackData = buildTrack(this.trackDef);
 
     // Ground terrain plane
-    const groundGeo = new THREE.PlaneGeometry(1200, 1200);
+    const groundGeo = new THREE.PlaneGeometry(2400, 2400);
     groundGeo.rotateX(-Math.PI / 2);
     const groundMat = new THREE.MeshStandardMaterial({
       color: this.trackDef.groundColor,
       roughness: 0.95,
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.position.y = -0.1;
+    ground.position.y = -0.15;
+    if (this.trackDef.theme === 'sky') {
+      ground.visible = false;
+    }
     this.scene.add(ground);
 
     // Add track parts
@@ -767,23 +770,6 @@ export class ToonCarEngine {
         setTimeout(() => this.callbacks.onCountdownTick(''), 2200);
       }
 
-      // Near-miss when blasting past a rival very close at speed
-      if (this.nearMissCooldown <= 0 && localPlayer.speed > 18) {
-        for (const other of this.racers) {
-          if (other.id === localPlayer.id) continue;
-          const d = Math.hypot(other.x - localPlayer.x, other.z - localPlayer.z);
-          if (d > 2.2 && d < 4.2) {
-            const rel = localPlayer.speed - other.speed;
-            if (rel > 6) {
-              this.nearMissCooldown = 3.5;
-              this.callbacks.onCombatEvent('🔥 LÄHEDALT MÖÖDA!');
-              this.cameraShake = Math.max(this.cameraShake, 0.25);
-              break;
-            }
-          }
-        }
-      }
-
       // Blue rocket inbound warning
       if (this.blueWarningCooldown <= 0) {
         const threat = this.projectiles.find(
@@ -797,7 +783,6 @@ export class ToonCarEngine {
       }
     }
 
-
     // Update Projectiles (following track spline driving lanes)
     updateProjectiles(this.projectiles, this.racers, this.trackData, dt, (event) => this.handleCollision(event));
 
@@ -806,22 +791,6 @@ export class ToonCarEngine {
     if (this.posUpdateTimer >= 0.12) {
       this.posUpdateTimer = 0;
       this.updateRacePositions();
-      // Shout when local player gains/loses a place
-      this.positionAnnounceCooldown = Math.max(0, this.positionAnnounceCooldown - 0.12);
-      const local = this.racers.find(r => r.id === this.localPlayerId);
-      if (local && this.gameState === 'racing' && this.positionAnnounceCooldown <= 0) {
-        if (this.lastAnnouncedPosition === 0) {
-          this.lastAnnouncedPosition = local.position;
-        } else if (local.position < this.lastAnnouncedPosition) {
-          this.callbacks.onCombatEvent(`⬆️ Möödusid! Nüüd ${local.position}. koht`);
-          this.lastAnnouncedPosition = local.position;
-          this.positionAnnounceCooldown = 2.5;
-        } else if (local.position > this.lastAnnouncedPosition) {
-          this.callbacks.onCombatEvent(`⬇️ Kaotasid koha — ${local.position}.`);
-          this.lastAnnouncedPosition = local.position;
-          this.positionAnnounceCooldown = 2.5;
-        }
-      }
     }
 
     // Item boxes respawn + light spin (sim rate)
@@ -909,11 +878,6 @@ export class ToonCarEngine {
           const ctrl = this.aiControllers.get(racer.id);
           if (ctrl) ctrl.itemCooldown = Math.max(ctrl.itemCooldown, 1.5);
         }
-        if (racer.id === this.localPlayerId && racer.currentItem) {
-          const info = POWER_UPS[racer.currentItem];
-          const label = info ? `${info.icon} ${info.name}` : racer.currentItem;
-          this.callbacks.onCombatEvent(`🎁 Said: ${label}!  →  vajuta E`);
-        }
         // Multiplayer: hide this box for everyone
         if (racer.id === this.localPlayerId && this.callbacks.onItemBoxTaken) {
           this.callbacks.onItemBoxTaken({
@@ -963,20 +927,40 @@ export class ToonCarEngine {
       const attacker = this.racers.find(r => r.id === event.racerId);
       const target = this.racers.find(r => r.id === event.targetId);
       if (target) {
-        const labels: Record<string, string> = {
-          rocket_hit: `💥 ${(attacker && attacker.name) || 'Keegi'} tabas raketiga ${target.name}!`,
-          blue_rocket_hit: `🔷 SININE RAKETT tabas ${target.name}!`,
-          thundercloud_strike: `⛈️ ÄIKESELOÖK tabas ${target.name}!`,
-          banana_hit: `🍌 ${target.name} libises banaanile!`,
-          mine_hit: `💣 ${target.name} sõitis miinile otsa!`,
-          freezeray_hit: `❄️ ${(attacker && attacker.name) || 'Keegi'} külmutas ${target.name} jääkamakasse!`,
-          vortex_suck: `🌀 ${(attacker && attacker.name) || 'Keegi'} püüdis ${target.name} musta auku!`,
-          plasma_hit: `🔮 ${(attacker && attacker.name) || 'Keegi'} tabas plasma-suurtükiga ${target.name}!`,
-          oil_slip: `🛢️ ${target.name} libises õliloigule ja tegi 720° spinni!`,
-        };
-        this.callbacks.onCombatEvent(labels[event.type] || 'Tabamus!');
-        if (attacker && attacker.id === this.localPlayerId) {
+        const isPlayerAttacker = !!(attacker && attacker.id === this.localPlayerId);
+        const isPlayerTarget = target.id === this.localPlayerId;
+        const isTargetLeader = target.position === 1;
+
+        // ONLY broadcast notifications if the player is involved or the race leader takes a blue rocket
+        if (isPlayerTarget) {
+          const victimLabels: Record<string, string> = {
+            rocket_hit: `💥 Sind tabati raketiga! (${attacker ? attacker.name : 'Vastane'})`,
+            blue_rocket_hit: '🔷 SININE RAKETT tabas sind otse!',
+            thundercloud_strike: '⛈️ ÄIKESELÖÖK tabas sind!',
+            banana_hit: '🍌 Libisesid banaanil!',
+            mine_hit: '💣 Sõitsid miinile otsa!',
+            freezeray_hit: `❄️ Sind külmutati! (${attacker ? attacker.name : 'Vastane'})`,
+            vortex_suck: `🌀 Sind tõmmati musta auku! (${attacker ? attacker.name : 'Vastane'})`,
+            plasma_hit: `🔮 Sind tabas laserkiir! (${attacker ? attacker.name : 'Vastane'})`,
+            oil_slip: '🛢️ Libisesid õliloigul!',
+          };
+          this.callbacks.onCombatEvent(victimLabels[event.type] || '💥 Sind tabati!');
+        } else if (isPlayerAttacker) {
+          const attackLabels: Record<string, string> = {
+            rocket_hit: `🎯 Tabasid raketiga: ${target.name}!`,
+            blue_rocket_hit: `🔷 Sinine rakett tabas liidrit: ${target.name}!`,
+            thundercloud_strike: `⛈️ Äikesepilv tabas: ${target.name}!`,
+            banana_hit: `🍌 ${target.name} libises sinu banaanile!`,
+            mine_hit: `💣 ${target.name} sõitis sinu miinile!`,
+            freezeray_hit: `❄️ Külmutasid vastase: ${target.name}!`,
+            vortex_suck: `🌀 Püüdsid vastase (${target.name}) musta auku!`,
+            plasma_hit: `🔮 Tabasid laseriga: ${target.name}!`,
+            oil_slip: `🛢️ ${target.name} libises sinu õliloigule!`,
+          };
+          this.callbacks.onCombatEvent(attackLabels[event.type] || `🎯 Tabamus: ${target.name}!`);
           try { this.registerHitStreak(); } catch (_) { /* ignore */ }
+        } else if (isTargetLeader && event.type === 'blue_rocket_hit') {
+          this.callbacks.onCombatEvent(`🔷 Sinine rakett lõi liidri (${target.name}) teelt!`);
         }
       }
       // Broadcast hit so every client applies reaction (esp. target)
@@ -995,9 +979,30 @@ export class ToonCarEngine {
       }
     } else if (event.type === 'boost_pad') {
       soundManager.playTurbo();
+    } else if (event.type === 'jump_ramp') {
+      soundManager.playTurbo();
+      this.particles.emitNitroFlame(event.x, event.y + 0.4, event.z, 0);
+    } else if (event.type === 'stunt_boost') {
+      soundManager.playStuntChime();
+      this.particles.emitStarAura(event.x, event.y + 0.6, event.z);
       const racer = this.racers.find(r => r.id === event.racerId);
       if (racer && racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('⚡ KIIRENDUSPADI! Nitro aktiveeritud!');
+        this.callbacks.onCombatEvent('★ ÕHUTRIKK! +NITRO! ★');
+      }
+    } else if (event.type === 'stunt_ring') {
+      soundManager.playStuntRing();
+      this.particles.emitPlasmaBurst(event.x, event.y, event.z);
+      const racer = this.racers.find(r => r.id === event.racerId);
+      if (racer && racer.id === this.localPlayerId) {
+        this.callbacks.onCombatEvent('💫 TRIKIRÕNGAS! +500 PTS! 💫');
+      }
+    } else if (event.type === 'hazard_hit') {
+      soundManager.playExplosion();
+      this.particles.emitExplosion(event.x, event.y, event.z);
+      const racer = this.racers.find(r => r.id === event.racerId);
+      if (racer && racer.id === this.localPlayerId) {
+        this.cameraShake = 0.8;
+        this.callbacks.onCombatEvent(`⚠️ RAJATÕKE! Tabasid ohtu: ${event.hazardName || 'Takistus'}!`);
       }
     }
   }
@@ -1235,24 +1240,15 @@ export class ToonCarEngine {
       racer.turboTimer = 3.5;
       racer.speed = Math.max(racer.speed + 20, 58);
       soundManager.playTurbo();
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('🚀 SUPER NITRO KÄIVITATUD!');
-      }
     } else if (item === 'shield') {
       racer.hasShield = true;
       racer.shieldTimer = 8.0;
       soundManager.playShield();
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('🛡️ MULLKILP AKTIVEERITUD!');
-      }
     } else if (item === 'repair') {
       racer.spinTimer = 0;
       racer.frozenTimer = 0;
       racer.speed += 8;
       soundManager.playTurbo();
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('🔧 REMONT TEHTUD! Auto on jälle korras!');
-      }
     } else if (item === 'lightning') {
       // Zap all rivals!
       soundManager.playExplosion();
@@ -1293,7 +1289,11 @@ export class ToonCarEngine {
           leader.speed = 0;
         }
         soundManager.playExplosion();
-        this.callbacks.onCombatEvent(`🔨 10T ALASI kukkus liidrile (${leader.name}) pähe!`);
+        if (leader.id === this.localPlayerId) {
+          this.callbacks.onCombatEvent('🔨 10T ALASI kukkus sulle pähe!');
+        } else if (racer.id === this.localPlayerId) {
+          this.callbacks.onCombatEvent(`🔨 10T ALASI tabas liidrit (${leader.name})!`);
+        }
       }
     } else if (item === 'rocket') {
       soundManager.playRocketLaunch();
@@ -1414,9 +1414,6 @@ export class ToonCarEngine {
         state: 'idle',
         timer: 3.5,
       });
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('⛈️ ÄIKESEPILV ootab ohvreid!');
-      }
     } else if (item === 'banana') {
       const fwd = new THREE.Vector3(Math.sin(racer.rotY), 0, Math.cos(racer.rotY)).normalize();
       const spawnPos = new THREE.Vector3(racer.x, racer.y + 0.25, racer.z).sub(fwd.clone().multiplyScalar(2.5));
@@ -1433,9 +1430,6 @@ export class ToonCarEngine {
         life: 30.0,
         active: true,
       });
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('🍌 Banaan teele!');
-      }
     } else if (item === 'star') {
       racer.starTimer = 7.0;
       racer.turboTimer = Math.max(racer.turboTimer, 7.0);
@@ -1443,7 +1437,7 @@ export class ToonCarEngine {
       racer.shieldTimer = 7.0;
       soundManager.playTurbo();
       if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('⭐ SUPER TÄHT! VÕITMATU — PÜHI NAD TEELT!');
+        this.callbacks.onCombatEvent('⭐ SUPER TÄHT! VÕITMATU!');
         this.cameraShake = 0.35;
       }
     } else if (item === 'vortex') {
@@ -1463,9 +1457,6 @@ export class ToonCarEngine {
         life: 9.5,
         active: true,
       });
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('🌀 MUST AUK aktiveeritud! Tõmbab vastased keerisesse!');
-      }
     } else if (item === 'freezeray') {
       soundManager.playFreezeChime();
       const fwd = new THREE.Vector3(Math.sin(racer.rotY), 0, Math.cos(racer.rotY)).normalize();
@@ -1477,15 +1468,12 @@ export class ToonCarEngine {
         x: spawnPos.x,
         y: spawnPos.y,
         z: spawnPos.z,
-        vx: fwd.x * 68,
+        vx: fwd.x * 90,
         vy: 0,
-        vz: fwd.z * 68,
-        life: 4.2,
+        vz: fwd.z * 90,
+        life: 3.5,
         active: true,
       });
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('❄️ JÄÄKÜLMUTI tulistatud! Külmuta konkurendid!');
-      }
     } else if (item === 'plasma_cannon') {
       soundManager.playPlasmaShot();
       const fwd = new THREE.Vector3(Math.sin(racer.rotY), 0, Math.cos(racer.rotY)).normalize();
@@ -1497,16 +1485,13 @@ export class ToonCarEngine {
         x: spawnPos.x,
         y: spawnPos.y,
         z: spawnPos.z,
-        vx: fwd.x * 72,
+        vx: fwd.x * 140,
         vy: 0,
-        vz: fwd.z * 72,
-        life: 3.5,
+        vz: fwd.z * 140,
+        life: 2.5,
         active: true,
         hitIds: [],
       });
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('🔮 PLASMA SUURTÜKK tulistatud! Läbistav energialöök!');
-      }
     } else if (item === 'oil_slick') {
       soundManager.playOilSlick();
       const fwd = new THREE.Vector3(Math.sin(racer.rotY), 0, Math.cos(racer.rotY)).normalize();
@@ -1524,9 +1509,6 @@ export class ToonCarEngine {
         life: 35.0,
         active: true,
       });
-      if (racer.id === this.localPlayerId) {
-        this.callbacks.onCombatEvent('🛢️ ÕLILOIK maha jäetud! Tagasõitjatele libe lõks!');
-      }
     }
 
     // Spawn meshes immediately so rockets are visible the same frame
@@ -1657,8 +1639,12 @@ export class ToonCarEngine {
       const targetScale = isShocked ? 0.68 : 1.0;
       meshContainer.root.scale.setScalar(targetScale);
 
-      // Rotation (Pitch rotX on hills/braking, Yaw rotY, Roll rotZ in cornering/drifting)
-      meshContainer.root.rotation.set(racer.rotX || 0, racer.rotY, racer.rotZ || 0);
+      // Rotation (Pitch rotX on hills/braking, Yaw rotY, Roll rotZ in cornering/drifting + 3D Airborne Stunt Tricks)
+      meshContainer.root.rotation.set(
+        (racer.rotX || 0) + (racer.stuntAngleX || 0),
+        racer.rotY + (racer.stuntAngleY || 0),
+        (racer.rotZ || 0) + (racer.stuntAngleZ || 0)
+      );
 
       // Front wheels steering
       meshContainer.frontWheels.forEach(fw => {
@@ -1756,6 +1742,61 @@ export class ToonCarEngine {
         }
       }
     });
+
+    // Animate Stunt Rings (continuous rotation of rings and particle satellites)
+    if (this.trackData.stuntRings) {
+      this.trackData.stuntRings.forEach(ring => {
+        if (ring.mesh) {
+          ring.mesh.rotation.z += dt * 1.5;
+        }
+      });
+    }
+
+    // Animate Dynamic Track Hazards (Swinging axes, sweeping lasers, rolling boulders, geysers)
+    if (this.trackData.hazards) {
+      const nowSec = performance.now() * 0.001;
+      this.trackData.hazards.forEach(hazard => {
+        hazard.sweepProgress = (hazard.sweepProgress || 0) + dt * hazard.sweepSpeed;
+        if (!hazard.mesh) return;
+
+        if (hazard.type === 'pendulum') {
+          const swingArm = hazard.mesh.getObjectByName('swing_arm');
+          if (swingArm) {
+            const swingAngle = Math.sin(nowSec * hazard.sweepSpeed) * 0.95;
+            swingArm.rotation.z = swingAngle;
+            // Update collision point offset based on blade position
+            const sinA = Math.sin(swingAngle);
+            hazard.x = hazard.mesh.position.x + sinA * 7.5;
+          }
+        } else if (hazard.type === 'laser_sweeper') {
+          const laserArm = hazard.mesh.getObjectByName('laser_beam');
+          if (laserArm) {
+            laserArm.position.y = 1.6 + Math.sin(nowSec * hazard.sweepSpeed) * 1.2;
+          }
+        } else if (hazard.type === 'snow_boulder') {
+          const boulder = hazard.mesh.getObjectByName('rolling_boulder');
+          if (boulder) {
+            boulder.position.x = Math.sin(nowSec * hazard.sweepSpeed) * (hazard.sweepRange * 0.6);
+            boulder.rotation.z -= dt * 4.5;
+            hazard.x = hazard.mesh.position.x + boulder.position.x;
+          }
+        } else if (hazard.type === 'magma_geyser' || hazard.type === 'water_spout') {
+          const spout = hazard.mesh.getObjectByName('erupting_spout');
+          if (spout) {
+            const pulse = 0.5 + Math.abs(Math.sin(nowSec * hazard.sweepSpeed)) * 0.9;
+            spout.scale.set(1 + pulse * 0.3, pulse, 1 + pulse * 0.3);
+            spout.position.y = (spout.scale.y * 7.0) / 2;
+          }
+        } else if (hazard.type === 'fireball') {
+          const fb = hazard.mesh.getObjectByName('fireball_mesh');
+          if (fb) {
+            fb.position.x = Math.sin(nowSec * hazard.sweepSpeed) * (hazard.sweepRange * 0.5);
+            fb.position.y = 2.2 + Math.abs(Math.sin(nowSec * hazard.sweepSpeed * 2)) * 1.5;
+            hazard.x = hazard.mesh.position.x + fb.position.x;
+          }
+        }
+      });
+    }
   }
 
   private updateRacePositions() {

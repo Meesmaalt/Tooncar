@@ -11,12 +11,13 @@ const _physCarFwd = new THREE.Vector3();
 const _physForwardDir = new THREE.Vector3();
 
 export interface CollisionEvent {
-  type: 'car_bump' | 'wall_hit' | 'item_box' | 'rocket_hit' | 'blue_rocket_hit' | 'thundercloud_strike' | 'banana_hit' | 'mine_hit' | 'boost_pad' | 'freezeray_hit' | 'vortex_suck' | 'plasma_hit' | 'oil_slip';
+  type: 'car_bump' | 'wall_hit' | 'item_box' | 'rocket_hit' | 'blue_rocket_hit' | 'thundercloud_strike' | 'banana_hit' | 'mine_hit' | 'boost_pad' | 'freezeray_hit' | 'vortex_suck' | 'plasma_hit' | 'oil_slip' | 'jump_ramp' | 'stunt_boost' | 'stunt_ring' | 'hazard_hit';
   racerId: string;
   targetId?: string;
   x: number;
   y: number;
   z: number;
+  hazardName?: string;
 }
 
 /**
@@ -215,12 +216,74 @@ export function updateRacerPhysics(
   racer.surfaceName = trackInfo.surfaceName || 'Rannatee';
   racer.surfaceIcon = trackInfo.surfaceIcon || '🛣️';
 
-  // Height adherence
+  // Height adherence & Dynamic Airborne 3D Physics
   const targetY = trackInfo.closestPoint.y;
-  if (Math.abs(racer.y - targetY) < 0.02) {
-    racer.y = targetY;
+  if (racer.isAirborne) {
+    racer.airTime = (racer.airTime || 0) + dt;
+    racer.vy = (racer.vy || 0) - 34 * dt; // Gravity
+    racer.y += (racer.vy || 0) * dt;
+
+    // Mid-air stunt trick controls
+    if (!racer.stuntType && (input.drift || input.useItem || Math.abs(input.steer) > 0.45)) {
+      if (input.drift) {
+        racer.stuntType = 'barrel_roll';
+      } else if (Math.abs(input.steer) > 0.45) {
+        racer.stuntType = 'spin';
+      } else {
+        racer.stuntType = 'flip';
+      }
+      racer.stuntTimer = 0;
+      racer.stuntCompleted = true;
+    }
+
+    if (racer.stuntType) {
+      racer.stuntTimer = (racer.stuntTimer || 0) + dt;
+      const stuntProgress = Math.min(1.0, racer.stuntTimer / 0.55);
+      if (racer.stuntType === 'flip') {
+        racer.stuntAngleX = stuntProgress * Math.PI * 2;
+      } else if (racer.stuntType === 'spin') {
+        racer.stuntAngleY = stuntProgress * Math.PI * 2 * (input.steer < 0 ? -1 : 1);
+      } else if (racer.stuntType === 'barrel_roll') {
+        racer.stuntAngleZ = stuntProgress * Math.PI * 2 * (input.steer < 0 ? -1 : 1);
+      }
+    }
+
+    // Touchdown on road landing
+    if (racer.y <= targetY && racer.vy <= 0) {
+      racer.y = targetY;
+      racer.vy = 0;
+      racer.isAirborne = false;
+      racer.stuntAngleX = 0;
+      racer.stuntAngleY = 0;
+      racer.stuntAngleZ = 0;
+
+      // Reward stunt completion on landing
+      if (racer.stuntCompleted) {
+        racer.turboTimer = 1.6;
+        racer.speed = Math.max(racer.speed + 9.5, maxBaseSpeed * 1.28);
+        if (onCollision) {
+          onCollision({
+            type: 'stunt_boost',
+            racerId: racer.id,
+            x: racer.x,
+            y: racer.y,
+            z: racer.z,
+          });
+        }
+      }
+      racer.stuntType = null;
+      racer.stuntCompleted = false;
+    }
   } else {
-    racer.y = THREE.MathUtils.lerp(racer.y, targetY, Math.min(1.0, dt * 18.0));
+    // Normal road surface tracking
+    if (Math.abs(racer.y - targetY) < 0.02) {
+      racer.y = targetY;
+    } else {
+      racer.y = THREE.MathUtils.lerp(racer.y, targetY, Math.min(1.0, dt * 18.0));
+    }
+    racer.stuntAngleX = 0;
+    racer.stuntAngleY = 0;
+    racer.stuntAngleZ = 0;
   }
 
   // Authentic 3D suspension dynamics:
@@ -427,6 +490,96 @@ export function updateRacerPhysics(
     }
   }
 
+  // Jump Ramp Check — launches car airborne with high velocity and airtime!
+  if (track.jumpRamps && !racer.isAirborne) {
+    for (const ramp of track.jumpRamps) {
+      const dx = racer.x - ramp.x;
+      const dz = racer.z - ramp.z;
+      const cosR = Math.cos(-ramp.rotY);
+      const sinR = Math.sin(-ramp.rotY);
+      const localX = dx * cosR - dz * sinR;
+      const localZ = dx * sinR + dz * cosR;
+      if (Math.abs(localX) <= (ramp.width * 0.5 + 1.2) && Math.abs(localZ) <= 3.2) {
+        // Launch into the air!
+        racer.isAirborne = true;
+        racer.vy = ramp.jumpForce || 22;
+        racer.speed = Math.max(racer.speed + (ramp.boostBonus || 12), maxBaseSpeed * 1.32);
+        racer.turboTimer = Math.max(racer.turboTimer, 1.4);
+        racer.airTime = 0;
+        racer.stuntTimer = 0;
+        racer.stuntType = null;
+        racer.stuntCompleted = false;
+        if (onCollision) {
+          onCollision({
+            type: 'jump_ramp',
+            racerId: racer.id,
+            x: racer.x,
+            y: racer.y,
+            z: racer.z,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  // Aerial Stunt Ring Check — fly through suspended rings for bonus mega-turbo!
+  if (track.stuntRings) {
+    for (const ring of track.stuntRings) {
+      if (ring.collectedBy.includes(racer.id)) continue;
+      const distSq = (racer.x - ring.x) ** 2 + (racer.y - ring.y) ** 2 + (racer.z - ring.z) ** 2;
+      if (distSq < (ring.radius + 1.8) ** 2) {
+        ring.collectedBy.push(racer.id);
+        racer.turboTimer = 2.2;
+        racer.speed = Math.max(racer.speed + 14, maxBaseSpeed * 1.38);
+        if (onCollision) {
+          onCollision({
+            type: 'stunt_ring',
+            racerId: racer.id,
+            x: ring.x,
+            y: ring.y,
+            z: ring.z,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  // Dynamic Interactive Track Hazards Check
+  if (track.hazards && racer.spinTimer <= 0) {
+    for (const hazard of track.hazards) {
+      if (!hazard.active) continue;
+      const dist = Math.hypot(racer.x - hazard.x, racer.y - hazard.y, racer.z - hazard.z);
+      if (dist < (hazard.radius + 1.25)) {
+        if (racer.starTimer > 0) {
+          // Super star smashes through hazard harmlessly
+          continue;
+        } else if (racer.hasShield) {
+          // Shield pops and protects the car
+          racer.hasShield = false;
+          racer.shieldTimer = 0;
+        } else {
+          // Hazard hit causes spinout and loss of momentum
+          racer.spinTimer = 1.4;
+          racer.speed = Math.min(racer.speed * 0.22, 5);
+          racer.driftChargeTime = 0;
+          if (onCollision) {
+            onCollision({
+              type: 'hazard_hit',
+              racerId: racer.id,
+              x: hazard.x,
+              y: hazard.y,
+              z: hazard.z,
+              hazardName: hazard.name,
+            });
+          }
+        }
+        break;
+      }
+    }
+  }
+
   // Item box pickups — HARD rule: max 1 item held; never pick while holding or on cooldown
   if (racer.itemBoxCooldown && racer.itemBoxCooldown > 0) {
     racer.itemBoxCooldown -= dt;
@@ -575,9 +728,37 @@ export function resolveCarCarCollisions(racers: RacerState[], dt: number, onColl
   }
 }
 
+function pointToSegmentDistance(
+  px: number, py: number, pz: number,
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number
+): number {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const abz = bz - az;
+  const apx = px - ax;
+  const apy = py - ay;
+  const apz = pz - az;
+
+  const abLenSq = abx * abx + aby * aby + abz * abz;
+  if (abLenSq < 1e-6) {
+    return Math.hypot(px - ax, py - ay, pz - az);
+  }
+
+  const t = Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / abLenSq));
+  const projX = ax + t * abx;
+  const projY = ay + t * aby;
+  const projZ = az + t * abz;
+
+  return Math.hypot(px - projX, py - projY, pz - projZ);
+}
+
 /**
- * Updates projectiles (Rockets, Blue Rockets, Thunderclouds, Bananas, Mines)
- * Rockets strictly follow the track driving lane spline curve around all turns & elevations
+ * Updates projectiles (Rockets, Blue Rockets, Plasma, Freeze Ray, Thunderclouds, Bananas, Mines, Vortex, Oil Slicks)
+ * - Rockets: the ONLY guided/homing projectiles (follow road spline & steer towards target)
+ * - Plasma Cannon: ultra-fast straight energy railgun beam that pierces through multiple cars in crosshairs
+ * - Freeze Ray: rapid straight cryo-shard blast that encases victim in frictionless ice
+ * - Swept capsule collision ensures 100% reliable hits with zero tunneling
  */
 export function updateProjectiles(
   projectiles: Projectile[],
@@ -599,9 +780,14 @@ export function updateProjectiles(
       continue;
     }
 
+    // Save previous frame position for swept continuous collision
+    p.prevX = p.x;
+    p.prevY = p.y;
+    p.prevZ = p.z;
+
     if (p.type === 'rocket') {
-      // Red Rocket: track-following homing missile (follows road spline curves & banks)
-      if (p.trackT === undefined && track) {
+      // Red Rocket: The ONLY homing missile (follows track curves and locks onto target ahead)
+      if (p.trackT === undefined && track && track.curve) {
         const info = track.getTrackInfo(new THREE.Vector3(p.x, p.y, p.z));
         p.trackT = info.t;
         p.lateralOffset = THREE.MathUtils.clamp(info.signedDistance, -track.trackWidth * 0.42, track.trackWidth * 0.42);
@@ -609,17 +795,21 @@ export function updateProjectiles(
 
       let target = p.targetId ? racers.find(r => r.id === p.targetId && !r.finished) : undefined;
       if (!target) {
-        let bestD = 75;
+        // Find closest rival ahead
+        let bestDist = 120;
         for (const r of racers) {
           if (r.id === p.ownerId || r.finished) continue;
           const d = Math.hypot(r.x - p.x, r.z - p.z);
-          if (d < bestD) { bestD = d; target = r; }
+          if (d < bestDist) {
+            bestDist = d;
+            target = r;
+          }
         }
         if (target) p.targetId = target.id;
       }
 
-      const speed = 64; // Fast forward speed along track
-      if (track && p.trackT !== undefined) {
+      const speed = 72; // High-velocity homing missile
+      if (track && track.curve && p.trackT !== undefined) {
         const stepT = (speed * dt) / trackLength;
         p.trackT = (p.trackT + stepT) % 1.0;
 
@@ -630,7 +820,7 @@ export function updateProjectiles(
         if (target) {
           const targetInfo = track.getTrackInfo(new THREE.Vector3(target.x, target.y, target.z));
           const targetOffset = THREE.MathUtils.clamp(targetInfo.signedDistance, -track.trackWidth * 0.44, track.trackWidth * 0.44);
-          p.lateralOffset = THREE.MathUtils.lerp(p.lateralOffset || 0, targetOffset, dt * 7.5);
+          p.lateralOffset = THREE.MathUtils.lerp(p.lateralOffset || 0, targetOffset, dt * 10.0);
         }
 
         p.x = centerPt.x + right.x * (p.lateralOffset || 0);
@@ -640,59 +830,69 @@ export function updateProjectiles(
         p.vy = tangent.y * speed;
         p.vz = tangent.z * speed;
       } else {
+        if (target) {
+          const toTarget = new THREE.Vector3(target.x - p.x, target.y + 0.5 - p.y, target.z - p.z).normalize();
+          p.vx = THREE.MathUtils.lerp(p.vx, toTarget.x * speed, dt * 8);
+          p.vy = THREE.MathUtils.lerp(p.vy, toTarget.y * speed, dt * 8);
+          p.vz = THREE.MathUtils.lerp(p.vz, toTarget.z * speed, dt * 8);
+        }
         p.x += p.vx * dt;
-        p.z += p.vz * dt;
         p.y += p.vy * dt;
+        p.z += p.vz * dt;
       }
 
-      // Collision (owner grace ~0.45s based on remaining life when spawned at 4.2)
+      // Robust swept collision check (3.8m hit radius)
       for (const racer of racers) {
-        if (racer.id === p.ownerId && p.life > 3.75) continue;
+        if (racer.id === p.ownerId && p.life > 3.8) continue; // brief launch grace
 
-        const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
-        if (dist < 2.35) {
+        const dist = pointToSegmentDistance(
+          racer.x, racer.y + 0.5, racer.z,
+          p.prevX, p.prevY, p.prevZ,
+          p.x, p.y, p.z
+        );
+
+        if (dist < 3.8) {
           p.active = false;
 
           if (racer.starTimer > 0) {
-            // Star invincibility deflects rocket!
+            // Star deflecting
           } else if (racer.hasShield) {
             racer.hasShield = false;
             racer.shieldTimer = 0;
           } else {
             racer.spinTimer = 1.8;
-            racer.speed *= 0.1;
+            racer.speed *= 0.15;
           }
 
           onCollision({
             type: 'rocket_hit',
             racerId: p.ownerId,
             targetId: racer.id,
-            x: p.x,
-            y: p.y,
-            z: p.z,
+            x: racer.x,
+            y: racer.y + 0.5,
+            z: racer.z,
           });
           break;
         }
       }
     } else if (p.type === 'blue_rocket') {
-      // Blue Rocket: relentless leader hunter navigating down the centerline of the track!
-      if (p.trackT === undefined && track) {
+      // Blue Rocket: relentless 1st place leader hunter along track centerline
+      if (p.trackT === undefined && track && track.curve) {
         const info = track.getTrackInfo(new THREE.Vector3(p.x, p.y, p.z));
         p.trackT = info.t;
         p.lateralOffset = 0;
       }
 
-      let target = racers.find(r => r.position === 1 && r.id !== p.ownerId);
+      let target = racers.find(r => r.position === 1 && r.id !== p.ownerId && !r.finished);
       if (!target) {
-        // If owner is 1st place, target 2nd place
-        target = racers.find(r => r.position === 2 && r.id !== p.ownerId);
+        target = racers.find(r => r.position === 2 && r.id !== p.ownerId && !r.finished);
       }
       if (!target) {
-        target = racers.find(r => r.id !== p.ownerId);
+        target = racers.find(r => r.id !== p.ownerId && !r.finished);
       }
 
-      const chaseSpeed = 92;
-      if (track && p.trackT !== undefined) {
+      const chaseSpeed = 96;
+      if (track && track.curve && p.trackT !== undefined) {
         const stepT = (chaseSpeed * dt) / trackLength;
         p.trackT = (p.trackT + stepT) % 1.0;
 
@@ -704,13 +904,14 @@ export function updateProjectiles(
           distToTarget = Math.hypot(target.x - centerPt.x, target.z - centerPt.z);
         }
 
-        if (target && distToTarget < 16.0) {
-          p.x = THREE.MathUtils.lerp(p.x, target.x, dt * 14);
-          p.z = THREE.MathUtils.lerp(p.z, target.z, dt * 14);
-          p.y = THREE.MathUtils.lerp(p.y, target.y + 0.6, dt * 10);
+        if (target && distToTarget < 24.0) {
+          // Dive directly onto leader car
+          p.x = THREE.MathUtils.lerp(p.x, target.x, dt * 16);
+          p.z = THREE.MathUtils.lerp(p.z, target.z, dt * 16);
+          p.y = THREE.MathUtils.lerp(p.y, target.y + 0.6, dt * 12);
         } else {
           p.x = centerPt.x;
-          p.y = centerPt.y + 1.25 + Math.sin(p.life * 12) * 0.18;
+          p.y = centerPt.y + 1.8 + Math.sin(p.life * 12) * 0.2;
           p.z = centerPt.z;
         }
 
@@ -718,8 +919,7 @@ export function updateProjectiles(
         p.vy = tangent.y * chaseSpeed;
         p.vz = tangent.z * chaseSpeed;
 
-        // Check distance to target or any car in the way
-        if (target && distToTarget < 2.8) {
+        if (target && distToTarget < 3.8) {
           p.active = false;
 
           // Mega explosion blast on leader!
@@ -733,13 +933,18 @@ export function updateProjectiles(
             }
           }
 
-          // Also splash damage nearby cars
+          // Splash damage nearby cars (8.5m radius)
           for (const other of racers) {
             if (other.id === target.id) continue;
             const splashDist = Math.hypot(other.x - p.x, other.z - p.z);
-            if (splashDist < 7.5 && !(other.starTimer > 0)) {
-              other.spinTimer = 1.6;
-              other.speed *= 0.3;
+            if (splashDist < 8.5 && !(other.starTimer > 0)) {
+              if (other.hasShield) {
+                other.hasShield = false;
+                other.shieldTimer = 0;
+              } else {
+                other.spinTimer = 1.6;
+                other.speed *= 0.3;
+              }
             }
           }
 
@@ -753,33 +958,204 @@ export function updateProjectiles(
           });
         }
       } else {
-        // Fallback forward movement
         p.x += p.vx * dt;
+        p.y += p.vy * dt;
         p.z += p.vz * dt;
       }
+    } else if (p.type === 'plasma_cannon') {
+      // Plasma Cannon: ULTRA-FAST LINEAR ENERGY RAILGUN BEAM (NOT HOMING!)
+      // Travels rapidly down the track corridor (110 m/s), ricochets off barriers, pierces multiple cars!
+      if (p.trackT === undefined && track && track.curve) {
+        const info = track.getTrackInfo(new THREE.Vector3(p.x, p.y, p.z));
+        p.trackT = info.t;
+        p.lateralOffset = THREE.MathUtils.clamp(info.signedDistance, -track.trackWidth * 0.44, track.trackWidth * 0.44);
+        // Calculate lateral deflection speed from initial aiming heading
+        const fwdAngle = Math.atan2(p.vx, p.vz);
+        const trackAngle = Math.atan2(info.tangent.x, info.tangent.z);
+        let angleDiff = fwdAngle - trackAngle;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        p.lateralSpeed = THREE.MathUtils.clamp(Math.sin(angleDiff) * 55, -20, 20);
+      }
+
+      const beamSpeed = 110;
+      if (track && track.curve && p.trackT !== undefined) {
+        const stepT = (beamSpeed * dt) / trackLength;
+        p.trackT = (p.trackT + stepT) % 1.0;
+
+        // Apply lateral drift
+        p.lateralOffset = (p.lateralOffset || 0) + (p.lateralSpeed || 0) * dt;
+
+        // Bank / ricochet off track side guardrails
+        const maxLat = track.trackWidth * 0.44;
+        if (p.lateralOffset > maxLat) {
+          p.lateralOffset = maxLat;
+          p.lateralSpeed = -Math.abs(p.lateralSpeed || 12);
+        } else if (p.lateralOffset < -maxLat) {
+          p.lateralOffset = -maxLat;
+          p.lateralSpeed = Math.abs(p.lateralSpeed || 12);
+        }
+
+        const centerPt = track.curve.getPointAt(p.trackT);
+        const tangent = track.curve.getTangentAt(p.trackT).normalize();
+        const right = new THREE.Vector3().crossVectors(tangent, upVec).normalize();
+
+        p.x = centerPt.x + right.x * (p.lateralOffset || 0);
+        p.y = centerPt.y + 0.65;
+        p.z = centerPt.z + right.z * (p.lateralOffset || 0);
+        p.vx = tangent.x * beamSpeed;
+        p.vy = tangent.y * beamSpeed;
+        p.vz = tangent.z * beamSpeed;
+      } else {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.z += p.vz * dt;
+      }
+
+      p.hitIds = p.hitIds || [];
+
+      for (const racer of racers) {
+        if (racer.finished) continue;
+        if (racer.id === p.ownerId && p.life > 2.2) continue; // brief launch grace
+        if (p.hitIds.includes(racer.id)) continue; // already pierced this racer
+
+        const dist = pointToSegmentDistance(
+          racer.x, racer.y + 0.5, racer.z,
+          p.prevX, p.prevY, p.prevZ,
+          p.x, p.y, p.z
+        );
+        const directDist = Math.hypot(racer.x - p.x, racer.z - p.z);
+
+        // Generous laser beam hit envelope (4.6m radius)
+        if (dist < 4.6 || directDist < 4.6) {
+          p.hitIds.push(racer.id);
+
+          if (racer.starTimer > 0) {
+            // Invincible
+          } else if (racer.hasShield) {
+            racer.hasShield = false;
+            racer.shieldTimer = 0;
+          } else {
+            // High-voltage plasma shock: 1.6s spinout, speed slashed to 20%
+            racer.spinTimer = 1.6;
+            racer.speed *= 0.2;
+          }
+
+          onCollision({
+            type: 'plasma_hit',
+            racerId: p.ownerId,
+            targetId: racer.id,
+            x: racer.x,
+            y: racer.y + 0.5,
+            z: racer.z,
+          });
+        }
+      }
+    } else if (p.type === 'freezeray') {
+      // Freeze Ray: RAPID LINEAR CRYO-SHARD BLAST (NOT HOMING!)
+      // Shoots down the track corridor at 85 m/s, freezes target in ice cube upon impact!
+      if (p.trackT === undefined && track && track.curve) {
+        const info = track.getTrackInfo(new THREE.Vector3(p.x, p.y, p.z));
+        p.trackT = info.t;
+        p.lateralOffset = THREE.MathUtils.clamp(info.signedDistance, -track.trackWidth * 0.44, track.trackWidth * 0.44);
+        const fwdAngle = Math.atan2(p.vx, p.vz);
+        const trackAngle = Math.atan2(info.tangent.x, info.tangent.z);
+        let angleDiff = fwdAngle - trackAngle;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        p.lateralSpeed = THREE.MathUtils.clamp(Math.sin(angleDiff) * 45, -16, 16);
+      }
+
+      const freezeSpeed = 85;
+      if (track && track.curve && p.trackT !== undefined) {
+        const stepT = (freezeSpeed * dt) / trackLength;
+        p.trackT = (p.trackT + stepT) % 1.0;
+
+        p.lateralOffset = (p.lateralOffset || 0) + (p.lateralSpeed || 0) * dt;
+
+        const maxLat = track.trackWidth * 0.44;
+        if (p.lateralOffset > maxLat) {
+          p.lateralOffset = maxLat;
+          p.lateralSpeed = -Math.abs(p.lateralSpeed || 10);
+        } else if (p.lateralOffset < -maxLat) {
+          p.lateralOffset = -maxLat;
+          p.lateralSpeed = Math.abs(p.lateralSpeed || 10);
+        }
+
+        const centerPt = track.curve.getPointAt(p.trackT);
+        const tangent = track.curve.getTangentAt(p.trackT).normalize();
+        const right = new THREE.Vector3().crossVectors(tangent, upVec).normalize();
+
+        p.x = centerPt.x + right.x * (p.lateralOffset || 0);
+        p.y = centerPt.y + 0.65;
+        p.z = centerPt.z + right.z * (p.lateralOffset || 0);
+        p.vx = tangent.x * freezeSpeed;
+        p.vy = tangent.y * freezeSpeed;
+        p.vz = tangent.z * freezeSpeed;
+      } else {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.z += p.vz * dt;
+      }
+
+      for (const racer of racers) {
+        if (racer.finished) continue;
+        if (racer.id === p.ownerId && p.life > 3.1) continue; // brief launch grace
+
+        const dist = pointToSegmentDistance(
+          racer.x, racer.y + 0.5, racer.z,
+          p.prevX, p.prevY, p.prevZ,
+          p.x, p.y, p.z
+        );
+        const directDist = Math.hypot(racer.x - p.x, racer.z - p.z);
+
+        if (dist < 4.4 || directDist < 4.4) {
+          p.active = false;
+
+          if (racer.starTimer > 0) {
+            // Star deflecting freeze
+          } else if (racer.hasShield) {
+            racer.hasShield = false;
+            racer.shieldTimer = 0;
+          } else {
+            // Encapsulated in ice: slides uncontrollably!
+            racer.frozenTimer = 3.5;
+            racer.spinTimer = 0.8;
+            racer.speed = Math.min(racer.speed * 0.32, 10);
+          }
+
+          onCollision({
+            type: 'freezeray_hit',
+            racerId: p.ownerId,
+            targetId: racer.id,
+            x: racer.x,
+            y: racer.y + 0.5,
+            z: racer.z,
+          });
+          break;
+        }
+      }
     } else if (p.type === 'thundercloud') {
-      // Thundercloud: stays stationary until opponent is near, then chases for ~3.5s and strikes!
+      // Thundercloud: stays stationary until opponent is near, then chases for ~3.2s and strikes!
       p.state = p.state || 'idle';
 
       if (p.state === 'idle') {
-        // Bob height while waiting (visual handled in mesh sync too)
         p.y += Math.sin((60 - p.life) * 3) * 0.002;
         for (const racer of racers) {
-          if (racer.id === p.ownerId && p.life > 57.5) continue; // brief owner grace
+          if (racer.id === p.ownerId && p.life > 57.5) continue;
 
           const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
-          if (dist < 11) {
+          if (dist < 12.0) {
             p.state = 'chasing';
             p.targetId = racer.id;
-            p.timer = 3.2;
+            p.timer = 3.0;
             break;
           }
         }
       } else if (p.state === 'chasing') {
         let target = racers.find(r => r.id === p.targetId && !r.finished);
-        // If original target finished, chase nearest
         if (!target) {
-          let best = 40;
+          let best = 45;
           for (const r of racers) {
             if (r.id === p.ownerId || r.finished) continue;
             const d = Math.hypot(r.x - p.x, r.z - p.z);
@@ -788,11 +1164,11 @@ export function updateProjectiles(
           if (target) p.targetId = target.id;
         }
         if (target) {
-          p.x = THREE.MathUtils.lerp(p.x, target.x, dt * 12);
-          p.y = THREE.MathUtils.lerp(p.y, target.y + 2.5, dt * 10);
-          p.z = THREE.MathUtils.lerp(p.z, target.z, dt * 12);
+          p.x = THREE.MathUtils.lerp(p.x, target.x, dt * 14);
+          p.y = THREE.MathUtils.lerp(p.y, target.y + 2.5, dt * 12);
+          p.z = THREE.MathUtils.lerp(p.z, target.z, dt * 14);
 
-          p.timer = (p.timer || 3.2) - dt;
+          p.timer = (p.timer || 3.0) - dt;
 
           if (p.timer <= 0) {
             // THUNDERBOLT STRIKE!
@@ -806,7 +1182,7 @@ export function updateProjectiles(
             } else {
               target.spinTimer = 2.4;
               target.frozenTimer = 3.2;
-              target.speed *= 0.25;
+              target.speed *= 0.2;
             }
 
             onCollision({
@@ -827,8 +1203,13 @@ export function updateProjectiles(
       for (const racer of racers) {
         if (racer.id === p.ownerId && p.life > 28.5) continue; // 1.5s grace for dropper
 
-        const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
-        if (dist < 2.0) {
+        const dist = pointToSegmentDistance(
+          racer.x, racer.y + 0.3, racer.z,
+          p.prevX, p.prevY, p.prevZ,
+          p.x, p.y, p.z
+        );
+
+        if (dist < 2.5) {
           p.active = false;
 
           if (racer.starTimer > 0) {
@@ -837,7 +1218,7 @@ export function updateProjectiles(
             racer.hasShield = false;
             racer.shieldTimer = 0;
           } else {
-            racer.spinTimer = 1.7; // 360 degree spinout
+            racer.spinTimer = 1.8; // 360 degree spinout
             racer.speed *= 0.35;
           }
 
@@ -857,8 +1238,13 @@ export function updateProjectiles(
       for (const racer of racers) {
         if (racer.id === p.ownerId && p.life > 14.5) continue;
 
-        const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
-        if (dist < 2.2) {
+        const dist = pointToSegmentDistance(
+          racer.x, racer.y + 0.3, racer.z,
+          p.prevX, p.prevY, p.prevZ,
+          p.x, p.y, p.z
+        );
+
+        if (dist < 2.8) {
           p.active = false;
 
           if (racer.starTimer > 0) {
@@ -867,69 +1253,12 @@ export function updateProjectiles(
             racer.hasShield = false;
             racer.shieldTimer = 0;
           } else {
-            racer.spinTimer = 2.0;
+            racer.spinTimer = 2.2;
             racer.speed *= 0.1;
           }
 
           onCollision({
             type: 'mine_hit',
-            racerId: p.ownerId,
-            targetId: racer.id,
-            x: p.x,
-            y: p.y,
-            z: p.z,
-          });
-          break;
-        }
-      }
-    } else if (p.type === 'freezeray') {
-      // Rapid cryo projectile with piercing crystal velocity along track lane
-      if (p.trackT === undefined && track) {
-        const info = track.getTrackInfo(new THREE.Vector3(p.x, p.y, p.z));
-        p.trackT = info.t;
-        p.lateralOffset = THREE.MathUtils.clamp(info.signedDistance, -track.trackWidth * 0.42, track.trackWidth * 0.42);
-      }
-
-      const speed = 68;
-      if (track && p.trackT !== undefined) {
-        const stepT = (speed * dt) / trackLength;
-        p.trackT = (p.trackT + stepT) % 1.0;
-        const centerPt = track.curve.getPointAt(p.trackT);
-        const tangent = track.curve.getTangentAt(p.trackT).normalize();
-        const right = new THREE.Vector3().crossVectors(tangent, upVec).normalize();
-        p.x = centerPt.x + right.x * (p.lateralOffset || 0);
-        p.y = centerPt.y + 0.55;
-        p.z = centerPt.z + right.z * (p.lateralOffset || 0);
-        p.vx = tangent.x * speed;
-        p.vy = tangent.y * speed;
-        p.vz = tangent.z * speed;
-      } else {
-        p.x += p.vx * dt;
-        p.z += p.vz * dt;
-        p.y += p.vy * dt;
-      }
-
-      for (const racer of racers) {
-        if (racer.id === p.ownerId && p.life > 3.6) continue; // brief grace period
-
-        const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
-        if (dist < 2.5) {
-          p.active = false;
-
-          if (racer.starTimer > 0) {
-            // Star deflecting freeze
-          } else if (racer.hasShield) {
-            racer.hasShield = false;
-            racer.shieldTimer = 0;
-          } else {
-            // Encapsulated in ice: slides uncontrollably!
-            racer.frozenTimer = 3.5;
-            racer.spinTimer = 0.8;
-            racer.speed = Math.min(racer.speed * 0.32, 10);
-          }
-
-          onCollision({
-            type: 'freezeray_hit',
             racerId: p.ownerId,
             targetId: racer.id,
             x: p.x,
@@ -945,20 +1274,20 @@ export function updateProjectiles(
 
       for (const racer of racers) {
         if (racer.finished) continue;
-        if (racer.id === p.ownerId && p.life > 7.0) continue; // brief spawn grace for dropper
+        if (racer.id === p.ownerId && p.life > 8.0) continue; // brief spawn grace for dropper
 
         const dx = p.x - racer.x;
         const dz = p.z - racer.z;
         const dist = Math.hypot(dx, dz);
 
-        if (dist < 16.5 && dist > 0.05 && !(racer.starTimer > 0)) {
+        if (dist < 18.0 && dist > 0.05 && !(racer.starTimer > 0)) {
           // Strong inward gravitational pull
-          const pullIntensity = (1.0 - dist / 16.5) * 18.0 * dt;
+          const pullIntensity = (1.0 - dist / 18.0) * 20.0 * dt;
           racer.x += (dx / dist) * pullIntensity;
           racer.z += (dz / dist) * pullIntensity;
 
           // Event horizon entrapment!
-          if (dist < 2.6) {
+          if (dist < 2.8) {
             if (racer.hasShield) {
               racer.hasShield = false;
               racer.shieldTimer = 0;
@@ -984,75 +1313,16 @@ export function updateProjectiles(
           }
         }
       }
-    } else if (p.type === 'plasma_cannon') {
-      // Piercing emerald plasma beam orb along track lane
-      if (p.trackT === undefined && track) {
-        const info = track.getTrackInfo(new THREE.Vector3(p.x, p.y, p.z));
-        p.trackT = info.t;
-        p.lateralOffset = THREE.MathUtils.clamp(info.signedDistance, -track.trackWidth * 0.42, track.trackWidth * 0.42);
-      }
-
-      const speed = 76;
-      if (track && p.trackT !== undefined) {
-        const stepT = (speed * dt) / trackLength;
-        p.trackT = (p.trackT + stepT) % 1.0;
-        const centerPt = track.curve.getPointAt(p.trackT);
-        const tangent = track.curve.getTangentAt(p.trackT).normalize();
-        const right = new THREE.Vector3().crossVectors(tangent, upVec).normalize();
-        p.x = centerPt.x + right.x * (p.lateralOffset || 0);
-        p.y = centerPt.y + 0.55;
-        p.z = centerPt.z + right.z * (p.lateralOffset || 0);
-        p.vx = tangent.x * speed;
-        p.vy = tangent.y * speed;
-        p.vz = tangent.z * speed;
-      } else {
-        p.x += p.vx * dt;
-        p.z += p.vz * dt;
-        p.y += p.vy * dt;
-      }
-
-      p.hitIds = p.hitIds || [];
-
-      for (const racer of racers) {
-        if (racer.finished) continue;
-        if (racer.id === p.ownerId && p.life > 3.0) continue; // brief launch grace
-        if (p.hitIds.includes(racer.id)) continue; // already pierced this racer
-
-        const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
-        if (dist < 2.9) {
-          p.hitIds.push(racer.id);
-
-          if (racer.starTimer > 0) {
-            // Invincible
-          } else if (racer.hasShield) {
-            racer.hasShield = false;
-            racer.shieldTimer = 0;
-          } else {
-            // Violent plasma shock: knocks car sideways/upwards and induces 1.8s spinout
-            racer.spinTimer = 1.8;
-            racer.speed *= 0.18;
-          }
-
-          onCollision({
-            type: 'plasma_hit',
-            racerId: p.ownerId,
-            targetId: racer.id,
-            x: p.x,
-            y: p.y,
-            z: p.z,
-          });
-        }
-      }
     } else if (p.type === 'oil_slick') {
       // Slippery black rainbow-sheened oil slick trap on the track
       (p as any).slipCount = (p as any).slipCount || 0;
 
       for (const racer of racers) {
         if (racer.finished) continue;
-        if (racer.id === p.ownerId && p.life > 28.5) continue; // brief dropper grace
+        if (racer.id === p.ownerId && p.life > 33.5) continue; // brief dropper grace
 
         const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
-        if (dist < 2.65) {
+        if (dist < 3.2) {
           if (racer.starTimer > 0) {
             // Invincible, burns through oil
           } else {
