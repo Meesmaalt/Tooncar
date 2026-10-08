@@ -36,7 +36,7 @@ export function addWorldDressing(
     const groundName = GROUND_BY_THEME[trackDef.theme] || "ground_beach";
     const gTex = repeatingGround(groundName, 42);
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(1100, 64),
+      trackDef.theme === "beach" ? coastalIsland(track) : new THREE.CircleGeometry(1100, 64),
       new THREE.MeshStandardMaterial({
         map: gTex.image ? gTex : undefined,
         color: gTex.image ? 0xffffff : trackDef.groundColor,
@@ -72,6 +72,21 @@ export function addWorldDressing(
 
   scene.add(group);
   return { group, water };
+}
+
+// Follow the circuit footprint so the ocean remains visible from the coast road.
+function coastalIsland(track: TrackData): THREE.ShapeGeometry {
+  const outline = new THREE.Shape();
+  for (let i = 0; i < 160; i++) {
+    const p = track.curve.getPointAt(i / 160);
+    const tangent = track.curve.getTangentAt(i / 160);
+    const outward = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
+    p.addScaledVector(outward, 38);
+    if (i === 0) outline.moveTo(p.x, -p.z);
+    else outline.lineTo(p.x, -p.z);
+  }
+  outline.closePath();
+  return new THREE.ShapeGeometry(outline);
 }
 
 function scatterThemeProps(group: THREE.Group, track: TrackData, theme: TrackDefinition["theme"]) {

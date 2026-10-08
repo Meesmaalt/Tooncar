@@ -133,7 +133,7 @@ export function computeAIInput(
   // 3. Smooth Lookahead Point along Continuous Spline (O(1) instant indexing)
   // Scales with current vehicle speed (12m to 28m ahead)
   const lookaheadDist = THREE.MathUtils.clamp(racer.speed * 0.5 + 12, 12, 28);
-  const totalLength = 2900; // Track arc length
+  const totalLength = track.curve.getLength(); // Cached arc length of the actual circuit
   const lookaheadFraction = lookaheadDist / totalLength;
   const lookaheadT = ((baseT + lookaheadFraction) % 1.0 + 1.0) % 1.0;
 
@@ -158,7 +158,7 @@ export function computeAIInput(
 
   // 5. Corner Anticipation & Throttle / Drift Control
   // Look slightly further ahead to detect sharp turns before entering them
-  const curveAheadT = ((lookaheadT + 0.04) % 1.0 + 1.0) % 1.0;
+  const curveAheadT = ((lookaheadT + 55 / totalLength) % 1.0 + 1.0) % 1.0;
   const curveAheadPoint = track.getCenterlinePointAt(curveAheadT);
   const turnDot = targetTangent.dot(curveAheadPoint.tangent);
   const turnSharpness = Math.max(0, 1.0 - turnDot);

@@ -1,3 +1,6 @@
+import { useEffect, useRef } from "react";
+import { createCircuitCurve } from "@/game/circuitLayouts";
+import type { TrackDefinition } from "@/types";
 import { TRACK_DEFINITIONS } from "@/game/tracks";
 import type { GameMode, SpeedClass } from "@/types";
 
@@ -17,6 +20,47 @@ const MODES: { id: GameMode; label: string; hint: string }[] = [
   { id: "cup", label: "Karikasari", hint: "Kõik rajad" },
   { id: "timetrial", label: "Ajasõit", hint: "Puhas ring" },
 ];
+
+function CircuitPreview({ track }: { track: TrackDefinition }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = 600;
+    canvas.height = 224;
+    const curve = createCircuitCurve(track.points);
+    const points = Array.from({ length: 240 }, (_, i) => curve.getPointAt(i / 240));
+    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
+    const minZ = Math.min(...points.map(p => p.z)), maxZ = Math.max(...points.map(p => p.z));
+    const scale = Math.min(500 / (maxX - minX), 170 / (maxZ - minZ));
+    const x = (v: number) => 300 + (v - (minX + maxX) / 2) * scale;
+    const y = (v: number) => 112 - (v - (minZ + maxZ) / 2) * scale;
+    ctx.beginPath();
+    points.forEach((p, i) => i === 0 ? ctx.moveTo(x(p.x), y(p.z)) : ctx.lineTo(x(p.x), y(p.z)));
+    ctx.closePath();
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#101821";
+    ctx.lineWidth = 17;
+    ctx.stroke();
+    ctx.strokeStyle = "#" + track.curbColorA.toString(16).padStart(6, "0");
+    ctx.lineWidth = 10;
+    ctx.stroke();
+    ctx.strokeStyle = "#f8fafc";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.fillStyle = "#f8fafc";
+    ctx.beginPath();
+    ctx.arc(x(0), y(0), 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#101821";
+    ctx.beginPath();
+    ctx.arc(x(0), y(0), 3, 0, Math.PI * 2);
+    ctx.fill();
+  }, [track]);
+  return <canvas ref={ref} className="absolute inset-0 h-full w-full" role="img" aria-label={`${track.name}: rajakuju ja stardikoht`} />;
+}
 
 export function TrackSelect({
   selectedTrackId,
@@ -72,9 +116,11 @@ export function TrackSelect({
                 <img
                   src={`/tracks/${t.id}.jpg`}
                   alt=""
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover opacity-25"
                   crossOrigin="anonymous"
                 />
+                <CircuitPreview track={t} />
+                <span className="absolute bottom-2 left-3 text-xs font-medium text-fg">{(t.lengthMeters / 1000).toFixed(2)} km</span>
                 <span className="absolute right-2 top-2 rounded-full bg-bg/80 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted">
                   {t.difficulty}
                 </span>

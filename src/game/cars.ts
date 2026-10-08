@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { CarDefinition, CarCustomization } from '../types';
 
 export const CAR_DEFINITIONS: CarDefinition[] = [
@@ -213,10 +214,10 @@ export function createToonCarMesh(
 
   const glassMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xcffafe,
-    transmission: 0.78,
-    opacity: 0.92,
-    transparent: true,
-    roughness: 0.05,
+    transmission: 0.0,
+    opacity: 1.0,
+    transparent: false,
+    roughness: 0.12,
     ior: 1.48,
   });
 
@@ -247,9 +248,9 @@ export function createToonCarMesh(
   const isHeavy = carDef.type === 'heavy';
   const chassisWidth = isHeavy ? 1.85 : 1.65;
   const chassisHeight = isHeavy ? 0.55 : 0.46;
-  const chassisLength = isHeavy ? 3.0 : 2.8;
+  const chassisLength = isHeavy ? 3.15 : carDef.type === 'speed' ? 3.1 : carDef.type === 'agile' ? 2.55 : 2.8;
 
-  const chassisGeo = new THREE.BoxGeometry(chassisWidth, chassisHeight, chassisLength);
+  const chassisGeo = new RoundedBoxGeometry(chassisWidth, chassisHeight, chassisLength, 3, 0.18);
   const chassis = new THREE.Mesh(chassisGeo, bodyMaterial);
   chassis.position.y = isHeavy ? 0.62 : 0.48;
   chassis.castShadow = true;
@@ -264,7 +265,7 @@ export function createToonCarMesh(
   bodyGroup.add(stripeMesh);
 
   // Front hood slope
-  const hoodGeo = new THREE.BoxGeometry(chassisWidth - 0.08, 0.26, 0.95);
+  const hoodGeo = new RoundedBoxGeometry(chassisWidth - 0.08, 0.26, 0.95, 3, 0.12);
   const hood = new THREE.Mesh(hoodGeo, bodyMaterial);
   hood.position.set(0, (isHeavy ? 0.72 : 0.58), 0.95);
   hood.rotation.x = -0.15;
@@ -273,26 +274,41 @@ export function createToonCarMesh(
 
   // Cabin / Cockpit Roof
   const cabinWidth = isHeavy ? 1.42 : 1.24;
-  const cabinHeight = isHeavy ? 0.68 : 0.58;
+  const cabinHeight = isHeavy ? 0.78 : carDef.type === 'speed' ? 0.44 : carDef.type === 'tech' ? 0.72 : 0.58;
   const cabinLength = isHeavy ? 1.35 : 1.45;
-  const cabinGeo = new THREE.BoxGeometry(cabinWidth, cabinHeight, cabinLength);
+  const cabinGeo = new RoundedBoxGeometry(cabinWidth, cabinHeight, cabinLength, 3, 0.22);
   const cabin = new THREE.Mesh(cabinGeo, bodyMaterial);
   cabin.position.set(0, (isHeavy ? 1.08 : 0.88), isHeavy ? 0.05 : -0.15);
   cabin.castShadow = true;
   bodyGroup.add(cabin);
 
   // Windshield & Rear Windows
-  const windshieldGeo = new THREE.BoxGeometry(cabinWidth + 0.02, cabinHeight * 0.88, 0.55);
+  const windshieldGeo = new RoundedBoxGeometry(cabinWidth * 0.91, cabinHeight * 0.70, 0.10, 2, 0.04);
   const windshield = new THREE.Mesh(windshieldGeo, glassMaterial);
   windshield.position.set(0, (isHeavy ? 1.05 : 0.86), isHeavy ? 0.65 : 0.46);
   windshield.rotation.x = -Math.PI * 0.14;
   bodyGroup.add(windshield);
 
-  const rearWinGeo = new THREE.BoxGeometry(cabinWidth + 0.02, cabinHeight * 0.82, 0.4);
+  const rearWinGeo = new RoundedBoxGeometry(cabinWidth * 0.90, cabinHeight * 0.65, 0.10, 2, 0.04);
   const rearWin = new THREE.Mesh(rearWinGeo, glassMaterial);
   rearWin.position.set(0, (isHeavy ? 1.05 : 0.88), isHeavy ? -0.55 : -0.78);
   rearWin.rotation.x = Math.PI * 0.12;
   bodyGroup.add(rearWin);
+
+  for (const side of [-1, 1]) {
+    for (const z of [-0.95, 0.95]) {
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(isHeavy ? 0.51 : 0.43, 0.065, 6, 18, Math.PI), bodyMaterial);
+      arch.rotation.y = Math.PI / 2;
+      arch.position.set(side * (chassisWidth / 2 + 0.035), isHeavy ? 0.50 : 0.36, z);
+      bodyGroup.add(arch);
+    }
+    const window = new THREE.Mesh(new RoundedBoxGeometry(0.065, cabinHeight * 0.55, cabinLength * 0.57, 2, 0.025), glassMaterial);
+    window.position.set(side * cabinWidth * 0.5, isHeavy ? 1.14 : 0.95, -0.13);
+    bodyGroup.add(window);
+    const sill = new THREE.Mesh(new RoundedBoxGeometry(0.12, 0.15, chassisLength * 0.7, 2, 0.055), secondaryMaterial);
+    sill.position.set(side * chassisWidth * 0.5, isHeavy ? 0.42 : 0.29, 0);
+    bodyGroup.add(sill);
+  }
 
   // Side mirrors
   [-cabinWidth * 0.5 - 0.15, cabinWidth * 0.5 + 0.15].forEach((xPos, i) => {

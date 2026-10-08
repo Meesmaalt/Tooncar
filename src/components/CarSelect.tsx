@@ -94,6 +94,12 @@ export function CarSelect({
     return () => {
       live = false;
       cancelAnimationFrame(id);
+      scene.traverse(object => {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
+        }
+      });
       renderer.dispose();
       host.replaceChildren();
     };
