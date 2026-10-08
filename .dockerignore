@@ -1,0 +1,10 @@
+.git
+node_modules
+.output
+.vercel
+dist
+.grok
+screenshots
+*.log
+.env
+.env.*
