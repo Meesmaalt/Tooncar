@@ -1,199 +1,8 @@
 import * as THREE from 'three';
 import { TrackDefinition, JumpRamp, TrackHazard, StuntRing } from '../types';
 import { applyAlbedoMap } from './textureLib';
-
-class TurtlePath {
-  x: number = 0;
-  y: number = 0;
-  z: number = 0;
-  heading: number = 0;
-  points: [number, number, number][] = [];
-
-  constructor(startX = 0, startY = 0, startZ = 0, startHeading = 0) {
-    this.x = startX;
-    this.y = startY;
-    this.z = startZ;
-    this.heading = startHeading;
-    this.points.push([this.x, this.y, this.z]);
-  }
-
-  forward(dist: number, elevationChange = 0, resolution = 15) {
-    const steps = Math.max(1, Math.ceil(dist / resolution));
-    const stepDist = dist / steps;
-    const stepY = elevationChange / steps;
-    const rad = this.heading * Math.PI / 180;
-    
-    for (let i = 0; i < steps; i++) {
-      this.x += Math.sin(rad) * stepDist;
-      this.z += Math.cos(rad) * stepDist;
-      this.y += stepY;
-      this.points.push([this.x, this.y, this.z]);
-    }
-  }
-
-  turn(angle: number, radius: number, elevationChange = 0, resolution = 15) {
-    const arcLen = (Math.abs(angle) / 360) * 2 * Math.PI * radius;
-    const steps = Math.max(1, Math.ceil(arcLen / resolution));
-    const stepAngle = angle / steps;
-    const stepY = elevationChange / steps;
-    
-    for (let i = 0; i < steps; i++) {
-      const startRad = this.heading * Math.PI / 180;
-      const dir = angle > 0 ? 1 : -1;
-      const centerHeading = startRad + dir * Math.PI / 2;
-      const cx = this.x + Math.sin(centerHeading) * radius;
-      const cz = this.z + Math.cos(centerHeading) * radius;
-      
-      this.heading = (this.heading + stepAngle) % 360;
-      const endRad = this.heading * Math.PI / 180;
-      
-      this.x = cx - Math.sin(endRad + dir * Math.PI / 2) * radius;
-      this.z = cz - Math.cos(endRad + dir * Math.PI / 2) * radius;
-      this.y += stepY;
-      
-      this.points.push([this.x, this.y, this.z]);
-    }
-  }
-
-  /**
-   * Smoothly bridges the track back to (0, 0, -straightApproach) facing exactly forward along +Z,
-   * then adds a flat, straight approach right into the start line (0, 0, 0).
-   * This guarantees that every track starts and finishes in the exact same forward direction,
-   * with perfectly aligned grid slots and no orientation anomalies.
-   */
-  closeTrack(straightApproach = 90, resolution = 18): [number, number, number][] {
-    const p0 = new THREE.Vector3(this.x, this.y, this.z);
-    const curRad = (this.heading * Math.PI) / 180;
-    const p1 = new THREE.Vector3(0, 0, -straightApproach);
-    const distToTarget = p0.distanceTo(p1);
-    const tanScale = Math.max(55, distToTarget * 0.65);
-    const v0 = new THREE.Vector3(Math.sin(curRad), 0, Math.cos(curRad)).multiplyScalar(tanScale);
-    const v1 = new THREE.Vector3(0, 0, 1).multiplyScalar(tanScale);
-
-    const bridgeSteps = Math.max(4, Math.ceil(distToTarget / resolution));
-    for (let i = 1; i <= bridgeSteps; i++) {
-      const t = i / bridgeSteps;
-      const t2 = t * t;
-      const t3 = t2 * t;
-      const h00 = 2 * t3 - 3 * t2 + 1;
-      const h10 = t3 - 2 * t2 + t;
-      const h01 = -2 * t3 + 3 * t2;
-      const h11 = t3 - t2;
-      const x = h00 * p0.x + h10 * v0.x + h01 * p1.x + h11 * v1.x;
-      const y = h00 * p0.y + h10 * v0.y + h01 * p1.y + h11 * v1.y;
-      const z = h00 * p0.z + h10 * v0.z + h01 * p1.z + h11 * v1.z;
-      this.points.push([x, y, z]);
-    }
-
-    const straightSteps = Math.max(2, Math.floor(straightApproach / resolution));
-    for (let i = 1; i < straightSteps; i++) {
-      const frac = i / straightSteps;
-      const z = -straightApproach + frac * straightApproach;
-      this.points.push([0, 0, z]);
-    }
-
-    return this.points;
-  }
-}
-
-function generateGrandPrixPoints(): [number, number, number][] {
-  const t = new TurtlePath(0, 0, 0);
-  t.forward(360, 0); // Start straight
-  t.turn(90, 130, 10); // Ascending climb to Ocean Bridge
-  t.turn(-35, 90, 4); // S-curve climb
-  t.turn(35, 90, 4); // Straighten onto Bridge (y = 18m)
-  t.forward(260, 0); // High Ocean Bridge straight
-  t.turn(90, 130, -10); // Coastal drop
-  t.forward(220, -8); // Shipwreck cove dip (y = 0m)
-  t.turn(-40, 85, 0); // Palm beach chicane left
-  t.turn(40, 85, 0); // Palm beach chicane right
-  t.turn(90, 120, 0); // Cove sweep
-  t.forward(220, 0); // Lighthouse tunnel straight
-  t.turn(90, 120, 0); // Final hairpin right to the start
-  return t.closeTrack(90);
-}
-
-function generateSpookyPoints(): [number, number, number][] {
-  const t = new TurtlePath(0, 0, 0);
-  t.forward(300, 0); // Castle courtyard start
-  t.turn(90, 110, 12); // Fortress rampart climb
-  t.forward(220, 8); // Battlements high straight (y = 20m)
-  t.turn(45, 80, -2); // Drawbridge chasm jump approach
-  t.turn(-45, 80, -2); // Chasm leap
-  t.forward(160, -4); // Tower descent (y = 12m)
-  t.turn(90, 110, -8); // Descent into dungeon crypt
-  t.forward(250, -4); // Dungeon catacomb tunnel (y = 0m)
-  t.turn(90, 100, 0); // Swinging Pendulum Guillotines section
-  t.turn(-40, 75, 0); // Crypt chicane left
-  t.turn(40, 75, 0); // Crypt chicane right
-  t.forward(220, 0); // Cemetery straight past ghosts & pumpkins
-  t.turn(90, 110, 0); // Final castle gate curve
-  return t.closeTrack(90);
-}
-
-function generateCyberPoints(): [number, number, number][] {
-  const t = new TurtlePath(0, 0, 0);
-  t.forward(320, 0); // Neon downtown start
-  t.turn(-90, 130, 14); // Anti-gravity magnetic climb
-  t.forward(240, 12); // High-altitude Zero-G skyway (y = 26m)
-  t.forward(200, 0); // Glass highway
-  t.turn(-90, 120, -16); // Supersonic canyon dive
-  t.forward(200, -8); // Canyon floor (y = 2m)
-  t.turn(45, 90, 0); // Hyper-Launch Ramp across canyon
-  t.turn(-45, 90, 0); // Mid-air trajectory
-  t.forward(240, 0); // Neon speedway
-  t.turn(-90, 130, 0); // Banked 180 loop
-  t.forward(260, 0); // Holographic warp tunnel
-  t.turn(-90, 120, 0); // Final neon straight
-  return t.closeTrack(90);
-}
-
-function generateIcePoints(): [number, number, number][] {
-  const t = new TurtlePath(0, 0, 0);
-  t.forward(300, 0); // Basecamp start
-  t.turn(90, 110, 12); // Alpine mountain switchback 1
-  t.turn(-40, 80, 8); // Switchback 2
-  t.turn(40, 80, 6); // Summit ridge pass (y = 26m)
-  t.forward(220, 0); // Frozen giant mammoth straight
-  t.turn(90, 120, -14); // Mega Ski-Jump Ramp over glacial gorge
-  t.forward(200, -6); // Shimmering Crystal Cavern entrance (y = 6m)
-  t.turn(90, 110, -4); // Cavern slide
-  t.turn(-40, 80, 0); // Ice stalactite chicane
-  t.turn(40, 80, 0); // Cavern exit (y = 2m)
-  t.forward(240, -2); // Glacier lake sprint
-  t.turn(90, 110, 0); // Avalanche hairpin
-  return t.closeTrack(90);
-}
-
-function generateVolcanoPoints(): [number, number, number][] {
-  const t = new TurtlePath(0, 0, 0);
-  t.forward(320, 0); // Ash wasteland start
-  t.turn(90, 120, 14); // Caldera rim climb
-  t.forward(240, 10); // Volcano rim straight overlooking lava lake (y = 24m)
-  t.turn(90, 120, -8); // Caldera Leap Jump Ramp
-  t.forward(220, -6); // Magma lake flyover (y = 10m)
-  t.turn(90, 110, -8); // Subterranean basalt magma tunnel
-  t.forward(250, -2); // Magma river bridge (y = 0m)
-  t.turn(-40, 80, 0); // Obsidian S-bends left
-  t.turn(40, 80, 0); // Obsidian S-bends right
-  t.turn(90, 110, 0); // Erupting geyser straight
-  return t.closeTrack(90);
-}
-
-function generateSkyPoints(): [number, number, number][] {
-  const t = new TurtlePath(0, 0, 0);
-  t.forward(350, 0); // Cloud terminal start
-  t.turn(-90, 130, 16); // Solar helix spiral climb
-  t.forward(240, 12); // High sky dock straight (y = 28m)
-  t.turn(-90, 140, -12); // Stratosphere Jump Ramp between floating sky islands
-  t.forward(260, -6); // Cloud-surfing downhill straight (y = 10m)
-  t.turn(40, 90, 0); // Floating solar sail chicane left
-  t.turn(-40, 90, 0); // Floating solar sail chicane right
-  t.forward(220, -4); // Weather satellite approach (y = 6m)
-  t.turn(-90, 130, -4); // Orbital satellite banking turn 1
-  t.turn(-90, 130, -2); // Orbital satellite banking turn 2 (y = 0m)
-  return t.closeTrack(90);
-}
+import { CIRCUITS, createCircuitCurve } from './circuitLayouts';
+import { batchStaticScenery } from './staticBatch';
 
 export const TRACK_DEFINITIONS: TrackDefinition[] = [
   {
@@ -201,7 +10,7 @@ export const TRACK_DEFINITIONS: TrackDefinition[] = [
     name: 'Päikeseranna Grand Prix (Sunny Beach)',
     theme: 'beach',
     difficulty: 'Medium',
-    description: 'Täiuslikult sujuv ja matemaatiliselt täpne Grand Prix ringrada. Pikad kiired sirged, kõrge sild ja professionaalsed S-kurvid pakuvad tõelist sõiduelamust.',
+    description: 'Kiire rannaring: lai stardisirge, tõusev ookeaniviadukt ja tehniline tuletornišikaan.',
     lengthMeters: 4200,
     lapsDefault: 3,
     skyColor: 0x38bdf8,
@@ -210,7 +19,7 @@ export const TRACK_DEFINITIONS: TrackDefinition[] = [
     trackColor: 0x334155,
     curbColorA: 0xef4444,
     curbColorB: 0xffffff,
-    points: generateGrandPrixPoints() as any,
+    points: CIRCUITS.beach,
   },
   {
     id: 'spooky_castle',
@@ -226,7 +35,7 @@ export const TRACK_DEFINITIONS: TrackDefinition[] = [
     trackColor: 0x18181b,
     curbColorA: 0xa855f7,
     curbColorB: 0x22c55e,
-    points: generateSpookyPoints() as any,
+    points: CIRCUITS.spooky,
   },
   {
     id: 'cyber_canyon',
@@ -242,7 +51,7 @@ export const TRACK_DEFINITIONS: TrackDefinition[] = [
     trackColor: 0x0f172a,
     curbColorA: 0x06b6d4,
     curbColorB: 0xf43f5e,
-    points: generateCyberPoints() as any,
+    points: CIRCUITS.cyber,
   },
   {
     id: 'frozen_peak',
@@ -258,7 +67,7 @@ export const TRACK_DEFINITIONS: TrackDefinition[] = [
     trackColor: 0x334155,
     curbColorA: 0x38bdf8,
     curbColorB: 0xf8fafc,
-    points: generateIcePoints() as any,
+    points: CIRCUITS.ice,
   },
   {
     id: 'volcano_island',
@@ -274,7 +83,7 @@ export const TRACK_DEFINITIONS: TrackDefinition[] = [
     trackColor: 0x27272a,
     curbColorA: 0xf97316,
     curbColorB: 0xef4444,
-    points: generateVolcanoPoints() as any,
+    points: CIRCUITS.volcano,
   },
   {
     id: 'sky_metropolis',
@@ -290,9 +99,13 @@ export const TRACK_DEFINITIONS: TrackDefinition[] = [
     trackColor: 0x1e293b,
     curbColorA: 0xfacc15,
     curbColorB: 0x38bdf8,
-    points: generateSkyPoints() as any,
+    points: CIRCUITS.sky,
   }
 ];
+
+for (const track of TRACK_DEFINITIONS) {
+  track.lengthMeters = Math.round(createCircuitCurve(track.points).getLength());
+}
 
 export interface ItemBoxPosition {
   x: number;
@@ -1260,8 +1073,7 @@ function createTunnel(
  * Builds the complete 3D racing track with rich scenery, asphalt markings, dense centerline, and robust collision detection
  */
 export function buildTrack(trackDef: TrackDefinition): TrackData {
-  const vectors = trackDef.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-  const curve = new THREE.CatmullRomCurve3(vectors, true, 'centripetal', 0.5);
+  const curve = createCircuitCurve(trackDef.points);
 
   // Bulletproof safety wrapper for curve sampling to prevent out-of-range t or NaN from crashing CatmullRomCurve3
   const origGetPointAt = curve.getPointAt.bind(curve);
@@ -1338,7 +1150,7 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
 
 
   // Build dense centerline (720 points along spline) for accurate physics on long multi-level tracks
-  const denseCount = 320;
+  const denseCount = 720;
   const centerlinePoints: CenterlinePoint[] = [];
   const upVec = new THREE.Vector3(0, 1, 0);
 
@@ -1575,7 +1387,7 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
   };
 
   // 1. Generate Road Ribbon Geometry with multi-surface materials
-  const segments = 200;
+  const segments = Math.ceil(curve.getLength() / 2.5);
   const roadGeo = new THREE.BufferGeometry();
   const roadVertices: number[] = [];
   const roadUvs: number[] = [];
@@ -1655,7 +1467,7 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
     roadVertices.push(leftPt.x, leftPt.y + 0.04, leftPt.z);
     roadVertices.push(rightPt.x, rightPt.y + 0.04, rightPt.z);
 
-    const vCoord = (i / segments) * 60;
+    const vCoord = (i / segments) * curve.getLength() / (22 * 40);
     roadUvs.push(0, vCoord);
     roadUvs.push(1, vCoord);
 
@@ -1668,7 +1480,9 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
       const segT = (i + 0.5) / segments;
       const segSector = sectors.find(sec => segT >= sec.startT && segT < sec.endT) || sectors[0];
       const matIdx = surfaceToMatIdx[segSector.surface] ?? 0;
-      roadGeo.addGroup(i * 6, 6, matIdx);
+      const previousGroup = roadGeo.groups[roadGeo.groups.length - 1];
+      if (previousGroup && previousGroup.materialIndex === matIdx) previousGroup.count += 6;
+      else roadGeo.addGroup(i * 6, 6, matIdx);
     }
 
     // Curbs on left and right edge
@@ -1725,7 +1539,7 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
     }
 
     // High Multi-Level Bridge Pillars: When track is elevated (pt.y >= 7.0m), create structural viaduct pillars strictly underneath the road deck
-    if (pt.y >= 7.0 && i % 8 === 0) {
+    if (pt.y >= 7.0 && i % 24 === 0) {
       const pillarHeight = Math.max(1.0, pt.y - 1.2);
       const pillarGroup = new THREE.Group();
       pillarGroup.position.set(pt.x, pillarHeight * 0.5, pt.z);
@@ -3766,6 +3580,9 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
   if (lighthouseBeam) {
     lighthouseBeam.matrixAutoUpdate = true;
   }
+
+  batchStaticScenery(decorations);
+  batchStaticScenery(wallsGroup);
 
   return {
     id: trackDef.id,

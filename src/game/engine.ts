@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RacerState, PlayerInput, Projectile, PowerUpType, TrackDefinition, CarDefinition, CarCustomization, SpeedClass } from '../types';
 import { buildTrack, TrackData } from './tracks';
 import { createToonCarMesh, CarMeshContainer, CAR_DEFINITIONS } from './cars';
@@ -185,7 +186,7 @@ export class ToonCarEngine {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = trackDef.theme === 'spooky' || trackDef.theme === 'cyber' ? 1.05 : 1.18;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -282,7 +283,9 @@ export class ToonCarEngine {
 
     try {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
-      const envTex = pmrem.fromScene(this.scene, 0.02).texture;
+      const studio = new RoomEnvironment();
+      const envTex = pmrem.fromScene(studio, 0.04).texture;
+      studio.dispose();
       this.scene.environment = envTex;
       pmrem.dispose();
     } catch (_) {}
@@ -1932,6 +1935,24 @@ export class ToonCarEngine {
     if (this.renderer.domElement && this.container.contains(this.renderer.domElement)) {
       this.container.removeChild(this.renderer.domElement);
     }
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    const textures = new Set<THREE.Texture>();
+    this.scene.traverse(object => {
+      const mesh = object as THREE.Mesh;
+      if (mesh.geometry) geometries.add(mesh.geometry);
+      if (mesh.material) {
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          materials.add(material);
+          for (const value of Object.values(material)) if (value instanceof THREE.Texture) textures.add(value);
+        }
+      }
+    });
+    if (this.scene.environment) textures.add(this.scene.environment);
+    geometries.forEach(geometry => geometry.dispose());
+    materials.forEach(material => material.dispose());
+    textures.forEach(texture => texture.dispose());
+    this.scene.clear();
     this.renderer.dispose();
   }
 
