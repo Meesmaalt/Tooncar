@@ -10,9 +10,9 @@ Create a Stack with the **Repository** method:
 - Repository reference: `refs/heads/main`
 - Compose path: `docker-compose.yml`
 
-Deploy the stack. Portainer builds the image from the repository and starts the production Node server. Open `http://YOUR-SERVER-IP:8080`.
+Deploy the stack. Portainer builds the image from the repository and starts the production Node server. Open `http://YOUR-SERVER-IP:8091`.
 
-If port 8080 is occupied, add the stack environment variable `TOONCAR_PORT` (for example `8090`) before deployment. The internal container port remains 8080. Pull the current repository revision and rebuild when updating. No database, authentication credentials, or bind mounts are required for the current game.
+If port 8091 is occupied, add the stack environment variable `TOONCAR_PORT` (for example `8090`) before deployment. The internal container port remains 8080. Pull the current repository revision and rebuild when updating. No database, authentication credentials, or bind mounts are required for the current game.
 
 This Compose file builds locally and targets Docker Standalone. Docker Swarm requires a prebuilt image pushed to a registry and an `image:` service definition; Swarm does not build Dockerfiles from stacks.
 
