@@ -188,7 +188,7 @@ export class ToonCarEngine {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = trackDef.theme === 'spooky' || trackDef.theme === 'cyber' ? 1.05 : 1.18;
+    this.renderer.toneMappingExposure = trackDef.theme === 'spooky' || trackDef.theme === 'cyber' ? 0.90 : 0.88;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
     this.renderer.sortObjects = true;
@@ -1170,24 +1170,26 @@ export class ToonCarEngine {
       t.spinTimer = Math.max(t.spinTimer, isLocalVictim ? 1.8 : 1.4);
       t.speed = Math.min(t.speed * 0.4, 18);
     } else if (hit.type === 'freezeray_hit') {
-      t.frozenTimer = Math.max(t.frozenTimer || 0, isLocalVictim ? 3.5 : 2.5);
-      t.spinTimer = Math.max(t.spinTimer, 0.8);
-      t.speed = Math.min(t.speed * 0.3, 10);
+      t.frozenTimer = Math.max(t.frozenTimer || 0, 2.5);
+      t.speed *= 0.55;
       soundManager.playFreezeChime();
       if (hit.x !== undefined) {
         this.particles.emitIceCrystals(hit.x, hit.y || t.y + 0.5, hit.z || t.z);
       }
+    } else if (hit.type === 'plasma_hit') {
+      t.spinTimer = Math.max(t.spinTimer, 1.6);
+      t.speed *= 0.2;
+      soundManager.playPlasmaShot();
     } else if (hit.type === 'vortex_suck') {
-      t.spinTimer = Math.max(t.spinTimer, isLocalVictim ? 2.4 : 1.8);
+      t.spinTimer = Math.max(t.spinTimer, 2.2);
       t.speed *= 0.15;
       soundManager.playVortexHum();
       if (hit.x !== undefined) {
         this.particles.emitVortexSwirl(hit.x, hit.y || t.y + 0.5, hit.z || t.z);
       }
     } else if (hit.type === 'thundercloud_strike') {
-      t.spinTimer = Math.max(t.spinTimer, 2.0);
-      t.speed = Math.min(t.speed * 0.15, 10);
-      t.frozenTimer = Math.max(t.frozenTimer || 0, 2.5);
+      t.speed *= 0.45;
+      t.frozenTimer = Math.max(t.frozenTimer || 0, 2.0);
     } else {
       // rocket / mine
       t.spinTimer = Math.max(t.spinTimer, isLocalVictim ? 2.4 : 2.0);
@@ -1465,11 +1467,12 @@ export class ToonCarEngine {
         x: spawnPos.x,
         y: spawnPos.y,
         z: spawnPos.z,
-        vx: fwd.x * 90,
+        vx: fwd.x,
         vy: 0,
-        vz: fwd.z * 90,
-        life: 3.5,
+        vz: fwd.z,
+        life: 0.45,
         active: true,
+        hitIds: [],
       });
     } else if (item === 'plasma_cannon') {
       soundManager.playPlasmaShot();
@@ -1485,7 +1488,7 @@ export class ToonCarEngine {
         vx: fwd.x * 140,
         vy: 0,
         vz: fwd.z * 140,
-        life: 2.5,
+        life: 0.65,
         active: true,
         hitIds: [],
       });
@@ -1579,7 +1582,7 @@ export class ToonCarEngine {
           }
         } else if (p.type === 'freezeray') {
           mesh.rotation.y = Math.atan2(p.vx, p.vz);
-          mesh.rotation.z += 0.2;
+          mesh.scale.setScalar(Math.min(1, (0.45 - p.life) * 5));
           if (Math.random() < 0.35) {
             this.particles.emitIceCrystals(p.x, p.y, p.z);
           }
@@ -1591,17 +1594,17 @@ export class ToonCarEngine {
           }
         } else if (p.type === 'thundercloud') {
           mesh.rotation.y += 0.04;
-          const s = p.state === 'chasing' ? 1.25 : 1.0;
+          const s = p.state === 'striking' ? 1.35 : 1.0;
           mesh.scale.setScalar(s + Math.sin(performance.now() * 0.006) * 0.08);
           if (p.state === 'idle') {
             mesh.position.y = p.y + Math.sin(performance.now() * 0.004) * 0.35;
           }
-          if (p.state === 'chasing' && Math.random() < 0.35) {
+          if (p.state === 'striking' && Math.random() < 0.35) {
             this.particles.emitCloudSparks(p.x, p.y, p.z);
           }
         } else if (p.type === 'plasma_cannon') {
           mesh.rotation.y = Math.atan2(p.vx, p.vz);
-          mesh.rotation.z += 0.25;
+          mesh.rotation.z = 0;
           if (Math.random() < 0.4) {
             this.particles.emitPlasmaBurst(p.x, p.y, p.z);
           }

@@ -28,7 +28,7 @@ export const POWER_UPS: Record<PowerUpType, PowerUpInfo> = {
     type: 'thundercloud',
     name: 'Äikesepilv',
     icon: '⛈️',
-    description: 'Varitseb teel! Kui vastane satub lähedale, jälitab teda 3.5 sekundit ja virutab äikeselöögi!',
+    description: 'Paigalseisev äikeselõks: hoiatab 0.65 sekundit ja lööb autosid, kes jäävad pilve alla. Sõida alt ära!' ,
     rarityWeight: 20,
   },
   banana: {
@@ -98,21 +98,21 @@ export const POWER_UPS: Record<PowerUpType, PowerUpInfo> = {
     type: 'vortex',
     name: 'Must Auk (Vortex)',
     icon: '🌀',
-    description: 'Gravitatsiooni singulaarsus! Tõmbab kõik lähedal olevad vastased (16m) oma tsentrisse pöörlema ja neelab nad lõksu!',
+    description: 'Taha jäetud gravitatsioonilõks: tõmbab vastaseid lähemale ja tabab iga autot ainult korra. Kaks tabamust kustutavad keerise.',
     rarityWeight: 20,
   },
   freezeray: {
     type: 'freezeray',
     name: 'Jääkülmuti (Cryo)',
     icon: '❄️',
-    description: 'Kiire krüo-lask otse ettepoole (90 m/s)! Külmutab tabatud vastase 3.5 sekundiks libisevasse jääkuubikusse!',
+    description: '14-meetrine külmapuhang ettepoole: aeglustab lehvikus olevaid vastaseid 2.5 sekundiks. Ei jälita ega lenda ümber kurvi.',
     rarityWeight: 22,
   },
   plasma_cannon: {
     type: 'plasma_cannon',
     name: 'Plasma Suurtükk',
     icon: '🔮',
-    description: 'Ülikiire lineaarne plasma-laserkiir (140 m/s)! Tulistab otse sihtmärgi suunas ja läbistab järjest kõik vastased!',
+    description: 'Sirge kitsas energiakiir (140 m/s): läbistab vastaseid kuni 90 meetri kaugusel. Sihib auto nina suunas ega järgi rada.',
     rarityWeight: 24,
   },
   oil_slick: {
@@ -512,92 +512,44 @@ export function createVortexMesh(): THREE.Group {
   return group;
 }
 
-// Freeze Ray / Cryo projectile assets
-const freezeCoreGeo = new THREE.OctahedronGeometry(0.48, 0);
-const freezeCoreMat = new THREE.MeshStandardMaterial({
-  color: 0xbae6fd,
-  emissive: 0x0284c7,
-  emissiveIntensity: 1.3,
-  roughness: 0.1,
-  metalness: 0.3,
-  transparent: true,
-  opacity: 0.92,
-});
-
-const freezeSpikeGeo = new THREE.ConeGeometry(0.18, 0.65, 5);
-freezeSpikeGeo.rotateX(Math.PI / 2);
-const freezeSpikeMat = new THREE.MeshStandardMaterial({
-  color: 0xe0f2fe,
-  emissive: 0x38bdf8,
-  emissiveIntensity: 0.8,
-});
+// Cryogenic spray: a translucent fan and snowflake rings, not a missile body.
+const cryoShellGeo = new THREE.ConeGeometry(7, 14, 24, 1, true);
+cryoShellGeo.rotateX(-Math.PI / 2);
+cryoShellGeo.translate(0, 0, 7);
+const cryoShellMat = new THREE.MeshBasicMaterial({ color: 0x91d8ef, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false });
+const cryoRingGeo = new THREE.TorusGeometry(1, 0.035, 4, 24);
+const cryoRingMat = new THREE.MeshBasicMaterial({ color: 0xd9f6ff, transparent: true, opacity: 0.5, depthWrite: false });
+const cryoFlakeGeo = new THREE.OctahedronGeometry(0.16);
 
 export function createFreezeRayMesh(): THREE.Group {
   const group = new THREE.Group();
-  group.scale.setScalar(1.3);
-
-  // Central ice diamond crystal
-  const core = new THREE.Mesh(freezeCoreGeo, freezeCoreMat);
-  core.scale.set(1.0, 1.0, 1.8);
-  group.add(core);
-
-  // 4 forward icy spikes
-  [-0.25, 0.25].forEach(x => {
-    [-0.25, 0.25].forEach(y => {
-      const spike = new THREE.Mesh(freezeSpikeGeo, freezeSpikeMat);
-      spike.position.set(x, y, 0.3);
-      group.add(spike);
-    });
-  });
-
+  group.add(new THREE.Mesh(cryoShellGeo, cryoShellMat));
+  for (let i = 1; i <= 4; i++) {
+    const ring = new THREE.Mesh(cryoRingGeo, cryoRingMat);
+    ring.position.z = i * 3;
+    ring.scale.setScalar(i * 1.45);
+    group.add(ring);
+    for (let j = 0; j < 6; j++) {
+      const angle = j * Math.PI / 3 + i;
+      const flake = new THREE.Mesh(cryoFlakeGeo, cryoRingMat);
+      flake.position.set(Math.cos(angle) * i, Math.sin(angle) * i, i * 3);
+      group.add(flake);
+    }
+  }
   return group;
 }
 
-// Plasma Cannon assets
-const plasmaCoreGeo = new THREE.SphereGeometry(0.55, 16, 16);
-const plasmaCoreMat = new THREE.MeshStandardMaterial({
-  color: 0x10b981,
-  emissive: 0x059669,
-  emissiveIntensity: 1.8,
-  roughness: 0.1,
-  metalness: 0.2,
-});
-
-const plasmaRingGeo = new THREE.TorusGeometry(0.85, 0.08, 8, 20);
-const plasmaRingMat = new THREE.MeshBasicMaterial({
-  color: 0x34d399,
-  transparent: true,
-  opacity: 0.85,
-});
-
-const plasmaSpikeGeo = new THREE.ConeGeometry(0.12, 0.55, 6);
-plasmaSpikeGeo.rotateX(Math.PI / 2);
-const plasmaSpikeMat = new THREE.MeshBasicMaterial({ color: 0x6ee7b7 });
-
+// Plasma is a thin luminous streak with a surrounding halo, without fins or exhaust.
+const plasmaBeamGeo = new THREE.CylinderGeometry(0.10, 0.10, 7, 8);
+plasmaBeamGeo.rotateX(Math.PI / 2);
+const plasmaHaloGeo = new THREE.CylinderGeometry(0.24, 0.24, 7, 8);
+plasmaHaloGeo.rotateX(Math.PI / 2);
+const plasmaCoreMat = new THREE.MeshBasicMaterial({ color: 0xe2fff0 });
+const plasmaHaloMat = new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.25, depthWrite: false });
 export function createPlasmaMesh(): THREE.Group {
   const group = new THREE.Group();
-  group.scale.setScalar(1.4);
-
-  const core = new THREE.Mesh(plasmaCoreGeo, plasmaCoreMat);
-  group.add(core);
-
-  // Outer orbital energy rings
-  const ring1 = new THREE.Mesh(plasmaRingGeo, plasmaRingMat);
-  ring1.rotation.x = Math.PI / 3;
-  group.add(ring1);
-
-  const ring2 = new THREE.Mesh(plasmaRingGeo, plasmaRingMat);
-  ring2.rotation.y = Math.PI / 3;
-  group.add(ring2);
-
-  // Forward plasma dart spikes
-  for (let i = 0; i < 4; i++) {
-    const angle = (i / 4) * Math.PI * 2;
-    const spike = new THREE.Mesh(plasmaSpikeGeo, plasmaSpikeMat);
-    spike.position.set(Math.cos(angle) * 0.45, Math.sin(angle) * 0.45, 0.5);
-    group.add(spike);
-  }
-
+  group.add(new THREE.Mesh(plasmaBeamGeo, plasmaCoreMat));
+  group.add(new THREE.Mesh(plasmaHaloGeo, plasmaHaloMat));
   return group;
 }
 

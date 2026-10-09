@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { stepHazardContacts, claimHazardContact, isInCryoCone } from './combatRules';
 import { RacerState, PlayerInput, Projectile, CarDefinition } from '../types';
 import { TrackData } from './tracks';
 import { CAR_DEFINITIONS } from './cars';
@@ -31,6 +32,7 @@ export function updateRacerPhysics(
   onCollision?: (event: CollisionEvent) => void,
   speedFactor: number = 1.0
 ) {
+  stepHazardContacts(racer, track.hazards || [], dt);
   // Prefer cached def on racer if present (avoids Array.find every frame)
   const carDef = (racer as any)._carDef || CAR_DEFINITIONS.find(c => c.id === racer.carId) || CAR_DEFINITIONS[0];
   (racer as any)._carDef = carDef;
@@ -552,6 +554,7 @@ export function updateRacerPhysics(
       if (!hazard.active) continue;
       const dist = Math.hypot(racer.x - hazard.x, racer.y - hazard.y, racer.z - hazard.z);
       if (dist < (hazard.radius + 1.25)) {
+        if (!claimHazardContact(racer, hazard)) continue;
         if (racer.starTimer > 0) {
           // Super star smashes through hazard harmlessly
           continue;
@@ -757,7 +760,7 @@ function pointToSegmentDistance(
  * Updates projectiles (Rockets, Blue Rockets, Plasma, Freeze Ray, Thunderclouds, Bananas, Mines, Vortex, Oil Slicks)
  * - Rockets: the ONLY guided/homing projectiles (follow road spline & steer towards target)
  * - Plasma Cannon: ultra-fast straight energy railgun beam that pierces through multiple cars in crosshairs
- * - Freeze Ray: rapid straight cryo-shard blast that encases victim in frictionless ice
+ * - Freeze Ray: short forward cone of cold; stationary cloud and persistent traps are proximity effects
  * - Swept capsule collision ensures 100% reliable hits with zero tunneling
  */
 export function updateProjectiles(
@@ -963,60 +966,16 @@ export function updateProjectiles(
         p.z += p.vz * dt;
       }
     } else if (p.type === 'plasma_cannon') {
-      // Plasma Cannon: ULTRA-FAST LINEAR ENERGY RAILGUN BEAM (NOT HOMING!)
-      // Travels rapidly down the track corridor (110 m/s), ricochets off barriers, pierces multiple cars!
-      if (p.trackT === undefined && track && track.curve) {
-        const info = track.getTrackInfo(new THREE.Vector3(p.x, p.y, p.z));
-        p.trackT = info.t;
-        p.lateralOffset = THREE.MathUtils.clamp(info.signedDistance, -track.trackWidth * 0.44, track.trackWidth * 0.44);
-        // Calculate lateral deflection speed from initial aiming heading
-        const fwdAngle = Math.atan2(p.vx, p.vz);
-        const trackAngle = Math.atan2(info.tangent.x, info.tangent.z);
-        let angleDiff = fwdAngle - trackAngle;
-        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        p.lateralSpeed = THREE.MathUtils.clamp(Math.sin(angleDiff) * 55, -20, 20);
-      }
-
-      const beamSpeed = 110;
-      if (track && track.curve && p.trackT !== undefined) {
-        const stepT = (beamSpeed * dt) / trackLength;
-        p.trackT = (p.trackT + stepT) % 1.0;
-
-        // Apply lateral drift
-        p.lateralOffset = (p.lateralOffset || 0) + (p.lateralSpeed || 0) * dt;
-
-        // Bank / ricochet off track side guardrails
-        const maxLat = track.trackWidth * 0.44;
-        if (p.lateralOffset > maxLat) {
-          p.lateralOffset = maxLat;
-          p.lateralSpeed = -Math.abs(p.lateralSpeed || 12);
-        } else if (p.lateralOffset < -maxLat) {
-          p.lateralOffset = -maxLat;
-          p.lateralSpeed = Math.abs(p.lateralSpeed || 12);
-        }
-
-        const centerPt = track.curve.getPointAt(p.trackT);
-        const tangent = track.curve.getTangentAt(p.trackT).normalize();
-        const right = new THREE.Vector3().crossVectors(tangent, upVec).normalize();
-
-        p.x = centerPt.x + right.x * (p.lateralOffset || 0);
-        p.y = centerPt.y + 0.65;
-        p.z = centerPt.z + right.z * (p.lateralOffset || 0);
-        p.vx = tangent.x * beamSpeed;
-        p.vy = tangent.y * beamSpeed;
-        p.vz = tangent.z * beamSpeed;
-      } else {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.z += p.vz * dt;
-      }
+      // A world-space energy beam keeps its launch heading; no spline steering or ricochets.
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
 
       p.hitIds = p.hitIds || [];
 
       for (const racer of racers) {
         if (racer.finished) continue;
-        if (racer.id === p.ownerId && p.life > 2.2) continue; // brief launch grace
+        if (racer.id === p.ownerId) continue;
         if (p.hitIds.includes(racer.id)) continue; // already pierced this racer
 
         const dist = pointToSegmentDistance(
@@ -1024,10 +983,8 @@ export function updateProjectiles(
           p.prevX, p.prevY, p.prevZ,
           p.x, p.y, p.z
         );
-        const directDist = Math.hypot(racer.x - p.x, racer.z - p.z);
-
-        // Generous laser beam hit envelope (4.6m radius)
-        if (dist < 4.6 || directDist < 4.6) {
+        // A narrow swept energy beam requires real aim.
+        if (dist < 1.6) {
           p.hitIds.push(racer.id);
 
           if (racer.starTimer > 0) {
@@ -1052,150 +1009,33 @@ export function updateProjectiles(
         }
       }
     } else if (p.type === 'freezeray') {
-      // Freeze Ray: RAPID LINEAR CRYO-SHARD BLAST (NOT HOMING!)
-      // Shoots down the track corridor at 85 m/s, freezes target in ice cube upon impact!
-      if (p.trackT === undefined && track && track.curve) {
-        const info = track.getTrackInfo(new THREE.Vector3(p.x, p.y, p.z));
-        p.trackT = info.t;
-        p.lateralOffset = THREE.MathUtils.clamp(info.signedDistance, -track.trackWidth * 0.44, track.trackWidth * 0.44);
-        const fwdAngle = Math.atan2(p.vx, p.vz);
-        const trackAngle = Math.atan2(info.tangent.x, info.tangent.z);
-        let angleDiff = fwdAngle - trackAngle;
-        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        p.lateralSpeed = THREE.MathUtils.clamp(Math.sin(angleDiff) * 45, -16, 16);
-      }
-
-      const freezeSpeed = 85;
-      if (track && track.curve && p.trackT !== undefined) {
-        const stepT = (freezeSpeed * dt) / trackLength;
-        p.trackT = (p.trackT + stepT) % 1.0;
-
-        p.lateralOffset = (p.lateralOffset || 0) + (p.lateralSpeed || 0) * dt;
-
-        const maxLat = track.trackWidth * 0.44;
-        if (p.lateralOffset > maxLat) {
-          p.lateralOffset = maxLat;
-          p.lateralSpeed = -Math.abs(p.lateralSpeed || 10);
-        } else if (p.lateralOffset < -maxLat) {
-          p.lateralOffset = -maxLat;
-          p.lateralSpeed = Math.abs(p.lateralSpeed || 10);
-        }
-
-        const centerPt = track.curve.getPointAt(p.trackT);
-        const tangent = track.curve.getTangentAt(p.trackT).normalize();
-        const right = new THREE.Vector3().crossVectors(tangent, upVec).normalize();
-
-        p.x = centerPt.x + right.x * (p.lateralOffset || 0);
-        p.y = centerPt.y + 0.65;
-        p.z = centerPt.z + right.z * (p.lateralOffset || 0);
-        p.vx = tangent.x * freezeSpeed;
-        p.vy = tangent.y * freezeSpeed;
-        p.vz = tangent.z * freezeSpeed;
-      } else {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.z += p.vz * dt;
-      }
-
+      // Short cone-shaped cryogenic burst. It expands from the muzzle and never flies around corners.
+      p.hitIds ||= [];
+      const radius = Math.min(14, (0.45 - p.life) * 70);
       for (const racer of racers) {
-        if (racer.finished) continue;
-        if (racer.id === p.ownerId && p.life > 3.1) continue; // brief launch grace
-
-        const dist = pointToSegmentDistance(
-          racer.x, racer.y + 0.5, racer.z,
-          p.prevX, p.prevY, p.prevZ,
-          p.x, p.y, p.z
-        );
-        const directDist = Math.hypot(racer.x - p.x, racer.z - p.z);
-
-        if (dist < 4.4 || directDist < 4.4) {
-          p.active = false;
-
-          if (racer.starTimer > 0) {
-            // Star deflecting freeze
-          } else if (racer.hasShield) {
-            racer.hasShield = false;
-            racer.shieldTimer = 0;
-          } else {
-            // Encapsulated in ice: slides uncontrollably!
-            racer.frozenTimer = 3.5;
-            racer.spinTimer = 0.8;
-            racer.speed = Math.min(racer.speed * 0.32, 10);
-          }
-
-          onCollision({
-            type: 'freezeray_hit',
-            racerId: p.ownerId,
-            targetId: racer.id,
-            x: racer.x,
-            y: racer.y + 0.5,
-            z: racer.z,
-          });
-          break;
-        }
+        if (racer.finished || racer.id === p.ownerId || p.hitIds.includes(racer.id)) continue;
+        if (!isInCryoCone(p, racer, radius)) continue;
+        p.hitIds.push(racer.id);
+        if (racer.starTimer > 0) continue;
+        if (racer.hasShield) { racer.hasShield = false; racer.shieldTimer = 0; }
+        else { racer.frozenTimer = 2.5; racer.speed *= 0.55; }
+        onCollision({ type: 'freezeray_hit', racerId: p.ownerId, targetId: racer.id, x: racer.x, y: racer.y + 0.5, z: racer.z });
       }
     } else if (p.type === 'thundercloud') {
-      // Thundercloud: stays stationary until opponent is near, then chases for ~3.2s and strikes!
-      p.state = p.state || 'idle';
-
-      if (p.state === 'idle') {
-        p.y += Math.sin((60 - p.life) * 3) * 0.002;
-        for (const racer of racers) {
-          if (racer.id === p.ownerId && p.life > 57.5) continue;
-
-          const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
-          if (dist < 12.0) {
-            p.state = 'chasing';
-            p.targetId = racer.id;
-            p.timer = 3.0;
-            break;
-          }
-        }
-      } else if (p.state === 'chasing') {
-        let target = racers.find(r => r.id === p.targetId && !r.finished);
-        if (!target) {
-          let best = 45;
-          for (const r of racers) {
-            if (r.id === p.ownerId || r.finished) continue;
-            const d = Math.hypot(r.x - p.x, r.z - p.z);
-            if (d < best) { best = d; target = r; }
-          }
-          if (target) p.targetId = target.id;
-        }
-        if (target) {
-          p.x = THREE.MathUtils.lerp(p.x, target.x, dt * 14);
-          p.y = THREE.MathUtils.lerp(p.y, target.y + 2.5, dt * 12);
-          p.z = THREE.MathUtils.lerp(p.z, target.z, dt * 14);
-
-          p.timer = (p.timer || 3.0) - dt;
-
-          if (p.timer <= 0) {
-            // THUNDERBOLT STRIKE!
-            p.active = false;
-
-            if (target.starTimer > 0) {
-              // Immune with star
-            } else if (target.hasShield) {
-              target.hasShield = false;
-              target.shieldTimer = 0;
-            } else {
-              target.spinTimer = 2.4;
-              target.frozenTimer = 3.2;
-              target.speed *= 0.2;
-            }
-
-            onCollision({
-              type: 'thundercloud_strike',
-              racerId: p.ownerId,
-              targetId: target.id,
-              x: target.x,
-              y: target.y,
-              z: target.z,
-            });
-          }
-        } else {
+      // A stationary proximity storm: warn before striking cars still underneath it.
+      p.state ||= 'idle';
+      const nearby = racers.filter(r => !r.finished && r.id !== p.ownerId && Math.hypot(r.x - p.x, r.z - p.z) < 7 && Math.abs(r.y + 2.5 - p.y) < 4);
+      if (p.state === 'idle' && nearby.length) { p.state = 'striking'; p.timer = 0.65; }
+      if (p.state === 'striking') {
+        p.timer = (p.timer ?? 0.65) - dt;
+        if (p.timer <= 0) {
           p.active = false;
+          for (const target of nearby) {
+            if (target.starTimer > 0) continue;
+            if (target.hasShield) { target.hasShield = false; target.shieldTimer = 0; }
+            else { target.frozenTimer = 2; target.speed *= 0.45; }
+            onCollision({ type: 'thundercloud_strike', racerId: p.ownerId, targetId: target.id, x: target.x, y: target.y, z: target.z });
+          }
         }
       }
     } else if (p.type === 'banana') {
@@ -1269,25 +1109,27 @@ export function updateProjectiles(
         }
       }
     } else if (p.type === 'vortex') {
+      p.hitIds ||= [];
       // Gravitational singularity: pulls nearby racers into its event horizon
       (p as any).absorbed = (p as any).absorbed || 0;
 
       for (const racer of racers) {
         if (racer.finished) continue;
-        if (racer.id === p.ownerId && p.life > 8.0) continue; // brief spawn grace for dropper
+        if (racer.id === p.ownerId || p.hitIds!.includes(racer.id)) continue;
 
         const dx = p.x - racer.x;
         const dz = p.z - racer.z;
         const dist = Math.hypot(dx, dz);
 
-        if (dist < 18.0 && dist > 0.05 && !(racer.starTimer > 0)) {
+        if (dist < 18.0 && !(racer.starTimer > 0)) {
           // Strong inward gravitational pull
           const pullIntensity = (1.0 - dist / 18.0) * 20.0 * dt;
-          racer.x += (dx / dist) * pullIntensity;
-          racer.z += (dz / dist) * pullIntensity;
+          racer.x += (dx / Math.max(dist, 0.05)) * pullIntensity;
+          racer.z += (dz / Math.max(dist, 0.05)) * pullIntensity;
 
           // Event horizon entrapment!
           if (dist < 2.8) {
+            p.hitIds!.push(racer.id);
             if (racer.hasShield) {
               racer.hasShield = false;
               racer.shieldTimer = 0;
@@ -1314,15 +1156,17 @@ export function updateProjectiles(
         }
       }
     } else if (p.type === 'oil_slick') {
+      p.hitIds ||= [];
       // Slippery black rainbow-sheened oil slick trap on the track
       (p as any).slipCount = (p as any).slipCount || 0;
 
       for (const racer of racers) {
         if (racer.finished) continue;
-        if (racer.id === p.ownerId && p.life > 33.5) continue; // brief dropper grace
+        if (racer.id === p.ownerId || p.hitIds!.includes(racer.id)) continue;
 
         const dist = Math.hypot(racer.x - p.x, racer.z - p.z);
         if (dist < 3.2) {
+          p.hitIds!.push(racer.id);
           if (racer.starTimer > 0) {
             // Invincible, burns through oil
           } else {

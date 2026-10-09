@@ -57,13 +57,13 @@ export function CarSelect({
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    renderer.toneMappingExposure = 0.9;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
     host.replaceChildren(renderer.domElement);
 
     scene.add(new THREE.HemisphereLight(0xf8fafc, 0x1e293b, 0.9));
-    const key = new THREE.DirectionalLight(0xfff4e0, 2.2);
+    const key = new THREE.DirectionalLight(0xfff4e0, 1.6);
     key.position.set(4, 8, 6);
     key.castShadow = true;
     scene.add(key);

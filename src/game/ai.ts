@@ -195,16 +195,16 @@ export function computeAIInput(
         const dx = other.x - racer.x;
         const dz = other.z - racer.z;
         const dist = Math.hypot(dx, dz);
-        if (dist > 6 && dist < (item === 'blue_rocket' ? 120 : (item === 'plasma_cannon' ? 70 : 55))) {
+        if (dist > (item === 'freezeray' ? 1 : 6) && dist < (item === 'freezeray' ? 14 : item === 'blue_rocket' ? 120 : item === 'plasma_cannon' ? 90 : 55)) {
           const angleToRival = Math.atan2(dx, dz);
           let diff = Math.abs(angleToRival - racer.rotY);
           while (diff > Math.PI) diff = Math.PI * 2 - diff;
-          return diff < (item === 'blue_rocket' ? 1.2 : (item === 'plasma_cannon' ? 0.65 : 0.55));
+          return diff < (item === 'blue_rocket' ? 1.2 : item === 'plasma_cannon' ? Math.atan2(1.6, dist) : 0.55);
         }
         return false;
       });
       // Blue rocket / Plasma cannon: fire strategically
-      if (rivalAhead || (item === 'blue_rocket' && racer.position > 1) || (item === 'plasma_cannon' && Math.random() < 0.5)) {
+      if (rivalAhead || (item === 'blue_rocket' && racer.position > 1)) {
         useItem = true;
         aiCtrl.itemCooldown = 2.8;
         racer.speechText = item === 'blue_rocket' ? "Sinine rakett! 🔷" : (item === 'plasma_cannon' ? "Plasma löök! 🔮" : "Võta see! 🚀");
