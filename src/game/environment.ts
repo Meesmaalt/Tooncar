@@ -227,7 +227,7 @@ function addHorizonSilhouettes(group: THREE.Group, theme: TrackDefinition["theme
 export function createSun(theme: TrackDefinition["theme"]) {
   const color =
     theme === "volcano" ? 0xff7a45 : theme === "spooky" ? 0xc4b5fd : theme === "cyber" ? 0x67e8f9 : theme === "ice" ? 0xe0f2fe : 0xfff1c9;
-  const intensity = theme === "spooky" || theme === "cyber" ? 1.35 : 2.15;
+  const intensity = theme === "spooky" || theme === "cyber" ? 1.2 : 1.6;
   const sun = new THREE.DirectionalLight(color, intensity);
   sun.position.set(70, 120, 55);
   sun.castShadow = true;
