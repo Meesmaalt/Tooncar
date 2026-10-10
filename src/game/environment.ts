@@ -3,6 +3,8 @@ import type { TrackDefinition } from "../types";
 import type { TrackData } from "./tracks";
 import { GROUND_BY_THEME, repeatingGround, skyTexture } from "./textureLib";
 
+import { createTerrainGeometry } from "./terrain";
+
 const _dummy = new THREE.Object3D();
 
 function makeLambert(color: number, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) {
@@ -36,7 +38,7 @@ export function addWorldDressing(
     const groundName = GROUND_BY_THEME[trackDef.theme] || "ground_beach";
     const gTex = repeatingGround(groundName, 42);
     const ground = new THREE.Mesh(
-      trackDef.theme === "beach" ? coastalIsland(track) : new THREE.CircleGeometry(1100, 64),
+      createTerrainGeometry(track, trackDef.theme === "beach"),
       new THREE.MeshStandardMaterial({
         map: gTex.image ? gTex : undefined,
         color: gTex.image ? 0xffffff : trackDef.groundColor,
@@ -44,8 +46,6 @@ export function addWorldDressing(
         metalness: 0.02,
       }),
     );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.22;
     ground.receiveShadow = true;
     group.add(ground);
   }
@@ -72,21 +72,6 @@ export function addWorldDressing(
 
   scene.add(group);
   return { group, water };
-}
-
-// Follow the circuit footprint so the ocean remains visible from the coast road.
-function coastalIsland(track: TrackData): THREE.ShapeGeometry {
-  const outline = new THREE.Shape();
-  for (let i = 0; i < 160; i++) {
-    const p = track.curve.getPointAt(i / 160);
-    const tangent = track.curve.getTangentAt(i / 160);
-    const outward = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
-    p.addScaledVector(outward, 38);
-    if (i === 0) outline.moveTo(p.x, -p.z);
-    else outline.lineTo(p.x, -p.z);
-  }
-  outline.closePath();
-  return new THREE.ShapeGeometry(outline);
 }
 
 function scatterThemeProps(group: THREE.Group, track: TrackData, theme: TrackDefinition["theme"]) {
@@ -128,7 +113,7 @@ function scatterThemeProps(group: THREE.Group, track: TrackData, theme: TrackDef
   rocks.frustumCulled = false;
 
   let n = 0;
-  for (let i = 2; i < pts.length && n < count; i += 4) {
+  for (let i = 2; i < pts.length && n < count; i += Math.max(1, Math.floor(pts.length / count))) {
     const side = n % 2 === 0 ? 1 : -1;
     const dist = 20 + ((n * 17) % 22);
     const cp = pts[i];
@@ -177,7 +162,7 @@ function scatterBuildings(group: THREE.Group, pts: TrackData["centerlinePoints"]
   meshB.castShadow = true;
   let a = 0;
   let b = 0;
-  for (let i = 3; i < pts.length && a + b < count; i += 3) {
+  for (let i = 3; i < pts.length && a + b < count; i += Math.max(1, Math.floor(pts.length / count))) {
     const side = (a + b) % 2 === 0 ? 1 : -1;
     const dist = 24 + ((a + b) % 7) * 3;
     const cp = pts[i];

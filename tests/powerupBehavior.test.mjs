@@ -1,7 +1,7 @@
 import {test, after} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'vite';
-const server=await createServer({server:{middlewareMode:true},appType:'custom'});
+const server=await createServer({server:{middlewareMode:true,ws:{port:24680}},appType:'custom'});
 const {updateProjectiles}=await server.ssrLoadModule('/src/game/physics.ts');
 after(()=>server.close());
 const track={curve:{getLength:()=>1500,getPointAt:()=>{throw Error('non-rocket followed the track');}},getTrackInfo:()=>{throw Error('non-rocket snapped to road');}};
