@@ -636,7 +636,7 @@ function createShoulderTexture(theme: TrackDefinition['theme']): THREE.CanvasTex
   if (!ctx) return new THREE.CanvasTexture(canvas);
 
   const baseCol =
-    theme === 'beach' ? '#ca8a04' :
+    theme === 'beach' ? '#b9ab7a' :
     theme === 'spooky' ? '#1c1917' :
     theme === 'cyber' ? '#0f172a' :
     theme === 'ice' ? '#e0f2fe' :

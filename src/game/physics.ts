@@ -4,6 +4,7 @@ import { RacerState, PlayerInput, Projectile, CarDefinition } from '../types';
 import { TrackData } from './tracks';
 import { CAR_DEFINITIONS } from './cars';
 import { getRandomPowerUp } from './powerups';
+import { recoverRacer } from './recovery';
 import { soundManager } from '../audio/soundManager';
 
 // Pre-allocated static scratch vectors for zero-allocation physics updates
@@ -30,7 +31,8 @@ export function updateRacerPhysics(
   track: TrackData,
   dt: number,
   onCollision?: (event: CollisionEvent) => void,
-  speedFactor: number = 1.0
+  speedFactor: number = 1.0,
+  recoveryObstacles?: { x: number; y: number; z: number; radius?: number }[]
 ) {
   stepHazardContacts(racer, track.hazards || [], dt);
   // Prefer cached def on racer if present (avoids Array.find every frame)
@@ -46,18 +48,7 @@ export function updateRacerPhysics(
   // Handle respawn / reset
   if (input.respawn) {
     input.respawn = false;
-    const cp = track.checkpoints[racer.checkpointIndex];
-    const nextCp = track.checkpoints[(racer.checkpointIndex + 1) % track.checkpoints.length];
-    _physForwardDir.subVectors(nextCp, cp).normalize();
-    racer.x = cp.x;
-    racer.y = cp.y + 0.3;
-    racer.z = cp.z;
-    racer.rotY = Math.atan2(_physForwardDir.x, _physForwardDir.z);
-    racer.speed = 0;
-    racer.spinTimer = 0;
-    racer.frozenTimer = 0;
-    racer.driftChargeTime = 0;
-    racer.rotX = 0;
+    recoverRacer(racer, track, recoveryObstacles);
     soundManager.playRespawn();
     return;
   }

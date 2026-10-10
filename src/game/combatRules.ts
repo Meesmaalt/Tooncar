@@ -28,3 +28,7 @@ export function isInCryoCone(origin: Position & { vx: number; vz: number }, targ
   if (distance > radius || Math.abs(target.y - origin.y) > 3 || headingLength < 0.001) return false;
   return distance < 0.01 || (dx * origin.vx + dz * origin.vz) / (distance * headingLength) >= Math.cos(Math.PI / 5);
 }
+
+export function grantHazardRecovery(racer: Position, seconds = 2.8) {
+  encounters.set(racer, { contacts: new Set(), grace: seconds });
+}

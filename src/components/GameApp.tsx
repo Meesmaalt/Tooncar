@@ -117,7 +117,7 @@ export function GameApp() {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
       if (!e.repeat && (e.code === "KeyE" || e.code === "Enter")) engine.localInput.useItem = true;
       if (e.code === "KeyH") engine.localInput.honk = true;
-      if (e.code === "KeyR") engine.localInput.respawn = true;
+      if (!e.repeat && e.code === "KeyR") engine.localInput.respawn = true;
       if (!e.repeat && e.code === "Escape") {
         e.preventDefault();
         if (engine.gameState === "racing" || engine.gameState === "countdown") {

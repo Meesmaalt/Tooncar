@@ -103,6 +103,7 @@ export class ToonCarEngine {
   /** Blocks item use briefly after pickup so Space/E hold won't instant-fire */
   private itemArmTimers: Map<string, number> = new Map();
   private posUpdateTimer: number = 0;
+  private gamepadResetHeld = false;
   private _blankInput: PlayerInput = { throttle: 0, brake: 0, steer: 0, drift: false, useItem: false, honk: false, lookBehind: false, respawn: false };
   private _aiScratchInput: PlayerInput = { throttle: 0, brake: 0, steer: 0, drift: false, useItem: false, honk: false, lookBehind: false, respawn: false };
   private _gamepadInput: PlayerInput = { throttle: 0, brake: 0, steer: 0, drift: false, useItem: false, honk: false, lookBehind: false, respawn: false };
@@ -518,7 +519,8 @@ export class ToonCarEngine {
         else this._gamepadInput.useItem = false;
 
         this._gamepadInput.lookBehind = btn(4); // LB
-        this._gamepadInput.respawn = btn(9); // Start
+        this._gamepadInput.respawn = btn(9) && !this.gamepadResetHeld;
+        this.gamepadResetHeld = btn(9); // Start triggers once per press
 
         if (btn(10) || btn(11)) this._gamepadInput.honk = true; // Stick clicks
         else this._gamepadInput.honk = false;
@@ -685,7 +687,15 @@ export class ToonCarEngine {
       }
 
       const oldLap = racer.lap;
-      updateRacerPhysics(racer, input, this.trackData, dt, (event) => this.handleCollision(event), this.speedFactor);
+      const recoveryObstacles = input.respawn ? [
+        ...this.racers.filter(r => r.id !== racer.id && !r.finished).map(r => ({ x: r.x, y: r.y, z: r.z, radius: 3 })),
+        ...this.projectiles.filter(p => p.active && ['vortex', 'mine', 'banana', 'oil_slick', 'thundercloud'].includes(p.type)).map(p => ({ x: p.x, y: p.y, z: p.z, radius: p.type === 'vortex' ? 9 : p.type === 'thundercloud' ? 8 : 4 })),
+      ] : undefined;
+      updateRacerPhysics(racer, input, this.trackData, dt, (event) => this.handleCollision(event), this.speedFactor, recoveryObstacles);
+      if (racer.id === this.localPlayerId && recoveryObstacles) {
+        this.localInput.respawn = false;
+        this._gamepadInput.respawn = false;
+      }
 
       if (racer.id === this.localPlayerId && racer.lap > oldLap) {
         // Lap completed!

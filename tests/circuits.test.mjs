@@ -8,6 +8,11 @@ for (const [theme, points] of Object.entries(CIRCUITS)) {
     assert.ok(curve.getPoint(0).distanceTo(curve.getPoint(1)) < 1e-6);
     assert.ok(curve.getTangentAt(0).z > 0.98, 'start grid must face +Z');
     assert.ok(curve.getLength() > 1100 && curve.getLength() < 2600);
+    const step = curve.getLength() / 1000;
+    for (let i = 0; i < 1000; i++) {
+      const turn = curve.getTangentAt(i / 1000).angleTo(curve.getTangentAt(((i + 1) % 1000) / 1000));
+      assert.ok(step / Math.max(turn, 0.0001) > 10, 'corner folds the 22m road onto itself');
+    }
     const samples = Array.from({length: 400}, (_, i) => curve.getPointAt(i / 400));
     const orient = (a,b,c) => (b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x);
     for (let i = 0; i < samples.length; i++) {
