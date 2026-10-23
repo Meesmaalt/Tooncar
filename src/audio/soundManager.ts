@@ -35,7 +35,9 @@ class SoundManager {
         for (let i = 0; i < nodes.length; i++) {
           nodes[i]?.disconnect();
         }
-      } catch (_) {}
+      } catch {
+        /* ignore */
+      }
     };
   }
 

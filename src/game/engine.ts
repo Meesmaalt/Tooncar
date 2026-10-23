@@ -224,7 +224,9 @@ export class ToonCarEngine {
 
     try {
       this.renderer.compile(this.scene, this.camera);
-    } catch (_) {}
+    } catch {
+      /* ignore */
+    }
 
     this.scene.remove(warmupGroup);
 
@@ -289,7 +291,9 @@ export class ToonCarEngine {
       studio.dispose();
       this.scene.environment = envTex;
       pmrem.dispose();
-    } catch (_) {}
+    } catch {
+      /* ignore */
+    }
     this.envReady = true;
   }
 
@@ -509,10 +513,10 @@ export class ToonCarEngine {
         this._gamepadInput.brake = (btn(1) || btn(6) || btn(2)) ? 1 : 0; // B or LT or X
         this._gamepadInput.drift = btn(2) || btn(6); // X or LT (drift/brake combo works nicely)
         
-        let steer = gp.axes[0] || 0;
+        let steer = -(gp.axes[0] || 0);
         if (Math.abs(steer) < 0.15) steer = 0;
-        if (btn(14)) steer = -1; // D-pad left
-        if (btn(15)) steer = 1;  // D-pad right
+        if (btn(14)) steer = 1;  // D-pad left
+        if (btn(15)) steer = -1; // D-pad right
         this._gamepadInput.steer = steer;
 
         if (btn(3) || btn(5)) this._gamepadInput.useItem = true; // Y or RB
@@ -1972,8 +1976,8 @@ export class ToonCarEngine {
   private inputFromCodes(codes: Set<string>): PlayerInput {
     const has = (...list: string[]) => list.some((c) => codes.has(c));
     let steer = 0;
-    if (has('KeyA', 'ArrowLeft')) steer -= 1;
-    if (has('KeyD', 'ArrowRight')) steer += 1;
+    if (has('KeyA', 'ArrowLeft')) steer += 1;
+    if (has('KeyD', 'ArrowRight')) steer -= 1;
     return {
       throttle: has('KeyW', 'ArrowUp') ? 1 : 0,
       brake: has('KeyS', 'ArrowDown') ? 1 : 0,
@@ -1990,8 +1994,8 @@ export class ToonCarEngine {
     window.__controlsTest = {
       getYaw: () => {
         const p = this.racers.find((r) => r.id === this.localPlayerId) || this.racers[0];
-        // Probe uses skill convention (+yaw = player-visible left). Internal rotY is +Z-forward.
-        return p ? -p.rotY : 0;
+        // Probe uses skill convention (+yaw = player-visible left). Internal +rotY is +X (player-visible left).
+        return p ? p.rotY : 0;
       },
       getSpeed: () => {
         const p = this.racers.find((r) => r.id === this.localPlayerId) || this.racers[0];
@@ -1999,7 +2003,7 @@ export class ToonCarEngine {
       },
       setSteer: (v: number) => {
         this.qaHeld.clear();
-        this.localInput.steer = -v;
+        this.localInput.steer = v;
       },
       setKeys: (codes: string[]) => {
         this.qaHeld = new Set(codes);

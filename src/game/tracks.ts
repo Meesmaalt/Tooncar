@@ -1366,9 +1366,9 @@ export function buildTrack(trackDef: TrackDefinition): TrackData {
       }
     }
 
-    let isOnCurb = !isShortcut && distToCenter > halfW && distToCenter <= halfW + curbW;
-    let isOffroad = !isShortcut && distToCenter > halfW + curbW && distToCenter < wallDist;
-    let isWallHit = distToCenter >= wallDist - 0.15;
+    const isOnCurb = !isShortcut && distToCenter > halfW && distToCenter <= halfW + curbW;
+    const isOffroad = !isShortcut && distToCenter > halfW + curbW && distToCenter < wallDist;
+    const isWallHit = distToCenter >= wallDist - 0.15;
 
     _cachedTrackInfo.distanceToCenter = distToCenter;
     _cachedTrackInfo.signedDistance = signedDistance;

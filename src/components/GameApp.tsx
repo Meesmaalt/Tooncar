@@ -103,8 +103,8 @@ export function GameApp() {
       engine.localInput.throttle = held("KeyW", "ArrowUp") ? 1 : 0;
       engine.localInput.brake = held("KeyS", "ArrowDown") ? 1 : 0;
       let steer = 0;
-      if (held("KeyA", "ArrowLeft")) steer -= 1;
-      if (held("KeyD", "ArrowRight")) steer += 1;
+      if (held("KeyA", "ArrowLeft")) steer += 1;
+      if (held("KeyD", "ArrowRight")) steer -= 1;
       engine.localInput.steer = steer;
       engine.localInput.drift = held("Space", "ShiftLeft", "ShiftRight");
       engine.localInput.lookBehind = held("KeyC");
@@ -323,8 +323,8 @@ export function GameApp() {
             if (!engine) return;
             if (action === "throttle") engine.localInput.throttle = 1;
             if (action === "brake") engine.localInput.brake = 1;
-            if (action === "left") engine.localInput.steer = -1;
-            if (action === "right") engine.localInput.steer = 1;
+            if (action === "left") engine.localInput.steer = 1;
+            if (action === "right") engine.localInput.steer = -1;
             if (action === "drift") engine.localInput.drift = true;
           }}
           onInputEnd={(action) => {
@@ -332,8 +332,8 @@ export function GameApp() {
             if (!engine) return;
             if (action === "throttle") engine.localInput.throttle = 0;
             if (action === "brake") engine.localInput.brake = 0;
-            if (action === "left" && engine.localInput.steer < 0) engine.localInput.steer = 0;
-            if (action === "right" && engine.localInput.steer > 0) engine.localInput.steer = 0;
+            if (action === "left" && engine.localInput.steer > 0) engine.localInput.steer = 0;
+            if (action === "right" && engine.localInput.steer < 0) engine.localInput.steer = 0;
             if (action === "drift") engine.localInput.drift = false;
           }}
         />

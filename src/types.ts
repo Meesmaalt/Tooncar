@@ -160,7 +160,7 @@ export interface Projectile {
 export interface PlayerInput {
   throttle: number; // 0 to 1
   brake: number;    // 0 to 1
-  steer: number;    // -1 (left) to 1 (right)
+  steer: number;    // 1 (left) to -1 (right)
   drift: boolean;
   useItem: boolean;
   honk: boolean;
