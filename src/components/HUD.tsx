@@ -47,6 +47,8 @@ export interface HUDProps {
   surfaceName?: string;
   combatEvents: string[];
   countdownText: string | number;
+  fps?: number;
+  multiplayerInfo?: { isMultiplayer: boolean; peerCount: number; pingMs?: number | null };
   minimapData: {
     curvePoints: { x: number; z: number }[];
     racers: { id: string; x: number; z: number; color: string; isPlayer: boolean; position: number }[];
@@ -109,6 +111,8 @@ export function HUD({
   surfaceName,
   combatEvents,
   countdownText,
+  fps,
+  multiplayerInfo,
   minimapData,
   onUseItem,
   onHonk,
@@ -193,6 +197,21 @@ export function HUD({
             <div className="hidden rounded-md border border-line bg-bg/80 px-3 py-2 md:block">
               <div className="text-[10px] uppercase tracking-[0.14em] text-faint">Pind</div>
               <div className="text-xs font-medium">{surfaceName}</div>
+            </div>
+          )}
+          {fps !== undefined && (
+            <div className="rounded-md border border-line bg-bg/80 px-2.5 py-1.5 text-center">
+              <div className="text-[9px] uppercase tracking-[0.14em] text-faint">FPS</div>
+              <div className="font-mono text-xs font-semibold tabular text-ok">{fps}</div>
+            </div>
+          )}
+          {multiplayerInfo?.isMultiplayer && (
+            <div className="flex items-center gap-1.5 rounded-md border border-line bg-bg/80 px-2.5 py-1.5 text-xs">
+              <span className="size-2 rounded-full bg-ok animate-pulse" />
+              <span className="font-medium text-fg">{multiplayerInfo.peerCount + 1} sõitjat</span>
+              {multiplayerInfo.pingMs != null && (
+                <span className="font-mono text-[10px] text-faint">({multiplayerInfo.pingMs}ms)</span>
+              )}
             </div>
           )}
         </div>

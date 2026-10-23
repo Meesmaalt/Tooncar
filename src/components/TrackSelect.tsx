@@ -17,6 +17,7 @@ interface Props {
 
 const MODES: { id: GameMode; label: string; hint: string }[] = [
   { id: "single", label: "Üksiksõit", hint: "AI vastu" },
+  { id: "multiplayer", label: "Võrgusõit", hint: "P2P mitmikmäng" },
   { id: "cup", label: "Karikasari", hint: "Kõik rajad" },
   { id: "timetrial", label: "Ajasõit", hint: "Puhas ring" },
 ];

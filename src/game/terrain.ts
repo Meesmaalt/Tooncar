@@ -8,7 +8,7 @@ export function createTerrainGeometry(track: TrackData, coastal = false): THREE.
   const padding = coastal ? 120 : 230;
   const minX = Math.min(...xs) - padding, maxX = Math.max(...xs) + padding;
   const minZ = Math.min(...zs) - padding, maxZ = Math.max(...zs) + padding;
-  const nx = Math.ceil((maxX - minX) / 5), nz = Math.ceil((maxZ - minZ) / 5);
+  const nx = Math.ceil((maxX - minX) / 8), nz = Math.ceil((maxZ - minZ) / 8);
   const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
   const inside: boolean[] = [];
   const outline = coastal ? samples.map(s => ({ x: s.point.x, z: s.point.z })) : [];

@@ -61,7 +61,7 @@ export interface TrackDefinition {
   points: [number, number, number][]; // 3D spline control points
 }
 
-export type GameMode = 'single' | 'cup' | 'timetrial';
+export type GameMode = 'single' | 'cup' | 'timetrial' | 'multiplayer';
 export type SpeedClass = '50cc' | '100cc' | '150cc';
 
 export type UnderglowColor = 'none' | '#06b6d4' | '#22c55e' | '#ec4899' | '#eab308' | '#a855f7';

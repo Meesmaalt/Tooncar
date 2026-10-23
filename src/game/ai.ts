@@ -12,13 +12,17 @@ const AI_TAUNTS = [
   "Ops, vabandust! 😈",
 ];
 
-const AI_OUCHES = [
+export const AI_OUCHES = [
   "Ai kurja! 😵",
   "Kes selle siia pani?! 💣",
   "Küll ma sulle veel näitan! 😡",
   "Mu ilus värv! 💥",
   "Pöörab pea ringi! 💫",
 ];
+
+export function getRandomAIOuch(): string {
+  return AI_OUCHES[Math.floor(Math.random() * AI_OUCHES.length)];
+}
 
 export interface AIOpponentController {
   racerId: string;

@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { RacerState, PlayerInput, Projectile, PowerUpType, TrackDefinition, CarDefinition, CarCustomization, SpeedClass } from '../types';
+import { RacerState, PlayerInput, Projectile, PowerUpType, TrackDefinition, CarCustomization, SpeedClass } from '../types';
 import { buildTrack, TrackData } from './tracks';
 import { createToonCarMesh, CarMeshContainer, CAR_DEFINITIONS } from './cars';
 import { updateRacerPhysics, resolveCarCarCollisions, updateProjectiles, applySlipstream, CollisionEvent } from './physics';
-import { createAIControllers, computeAIInput, AIOpponentController } from './ai';
-import { getRandomPowerUp, POWER_UPS, createRocketMesh, createBlueRocketMesh, createThundercloudMesh, createBananaMesh, createMineMesh, createShieldMesh, createVortexMesh, createFreezeRayMesh, createPlasmaMesh, createOilSlickMesh } from './powerups';
+import { createAIControllers, computeAIInput, AIOpponentController, getRandomAIOuch } from './ai';
+import { createRocketMesh, createBlueRocketMesh, createThundercloudMesh, createBananaMesh, createMineMesh, createShieldMesh, createVortexMesh, createFreezeRayMesh, createPlasmaMesh, createOilSlickMesh } from './powerups';
 import { soundManager } from '../audio/soundManager';
 import { ParticleSystem } from './particles';
 import { SkidMarkManager } from './skidmarks';
@@ -43,6 +43,7 @@ export interface GameEngineCallbacks {
     currentSurface?: string;
     surfaceName?: string;
     surfaceIcon?: string;
+    fps?: number;
     minimapData?: {
       curvePoints: { x: number; z: number }[];
       racers: {
@@ -144,6 +145,9 @@ export class ToonCarEngine {
   private hitStreakTimer: number = 0;
   private physicsAccum: number = 0;
   private readonly fixedDt: number = 1 / 60;
+  private frameCount: number = 0;
+  private fpsTimer: number = 0;
+  public currentFPS: number = 60;
 
   constructor(
     container: HTMLElement,
@@ -183,9 +187,15 @@ export class ToonCarEngine {
     const height = container.clientHeight || window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(62, width / height, 0.2, 1400);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+      stencil: false,
+      depth: true,
+    });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio(Math.min(dpr, dpr > 1.5 ? 1.25 : 1.0));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -302,10 +312,6 @@ export class ToonCarEngine {
     userCarColor: string,
     customRacers?: { id: string; name: string; carId: string; color: string; isAI: boolean }[]
   ) {
-    const startPt = this.trackData.curve.getPointAt(0);
-    const startTangent = this.trackData.curve.getTangentAt(0);
-    const startRotY = Math.atan2(startTangent.x, startTangent.z);
-    const right = new THREE.Vector3().crossVectors(startTangent, new THREE.Vector3(0, 1, 0)).normalize();
     const now = Date.now();
     const totalTrackLen = this.trackData.curve.getLength() || 700;
     const getGridSlot = (gridIndex: number) => {
@@ -547,6 +553,14 @@ export class ToonCarEngine {
     this.lastTime = now;
     if (frameDt > 0.045) frameDt = 0.045; // clamp spiral on slow frames
     if (frameDt < 0.001) frameDt = 0.001;
+
+    this.frameCount++;
+    this.fpsTimer += frameDt;
+    if (this.fpsTimer >= 0.4) {
+      this.currentFPS = Math.round(this.frameCount / this.fpsTimer);
+      this.frameCount = 0;
+      this.fpsTimer = 0;
+    }
 
     // Pause: freeze sim, keep rendering last frame state
     if (this.paused && this.gameState === 'racing') {
@@ -857,6 +871,7 @@ export class ToonCarEngine {
       currentSurface: localRacer.currentSurface,
       surfaceName: localRacer.surfaceName,
       surfaceIcon: localRacer.surfaceIcon,
+      fps: this.currentFPS,
       minimapData: this.getMinimapData(),
     });
   }
@@ -969,9 +984,13 @@ export class ToonCarEngine {
             oil_slip: `🛢️ ${target.name} libises sinu õliloigule!`,
           };
           this.callbacks.onCombatEvent(attackLabels[event.type] || `🎯 Tabamus: ${target.name}!`);
-          try { this.registerHitStreak(); } catch (_) { /* ignore */ }
+          try { this.registerHitStreak(); } catch { /* ignore */ }
         } else if (isTargetLeader && event.type === 'blue_rocket_hit') {
           this.callbacks.onCombatEvent(`🔷 Sinine rakett lõi liidri (${target.name}) teelt!`);
+        }
+        if (target.isAI && !target.speechText) {
+          target.speechText = getRandomAIOuch();
+          target.speechTimer = 2.0;
         }
       }
       // Broadcast hit so every client applies reaction (esp. target)
@@ -1863,9 +1882,13 @@ export class ToonCarEngine {
     this.camera.lookAt(this.currentCamLookTarget);
 
     if (this.sunLight && this.sunTarget) {
-      this.sunTarget.position.set(player.x, player.y, player.z);
-      this.sunLight.position.set(player.x + 55, player.y + 90, player.z + 40);
-      this.sunLight.target.updateMatrixWorld();
+      const dx = player.x - this.sunTarget.position.x;
+      const dz = player.z - this.sunTarget.position.z;
+      if (dx * dx + dz * dz > 9.0) {
+        this.sunTarget.position.set(player.x, player.y, player.z);
+        this.sunLight.position.set(player.x + 55, player.y + 90, player.z + 40);
+        this.sunLight.target.updateMatrixWorld();
+      }
     }
 
     if (this.worldWater) {

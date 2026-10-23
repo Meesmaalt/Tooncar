@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Flag, HelpCircle, Play, Trophy, User } from "lucide-react";
+import { Check, Copy, Flag, HelpCircle, Play, Trophy, User, Users, Wifi } from "lucide-react";
 import { ToonCarEngine } from "@/game/engine";
 import { CAR_DEFINITIONS } from "@/game/cars";
 import { TRACK_DEFINITIONS } from "@/game/tracks";
 import { preloadTextures } from "@/game/textureLib";
 import { soundManager } from "@/audio/soundManager";
+import { useP2PRoom } from "@/lib/multiplayer";
 import type { CarCustomization, CupStanding, GameMode, PowerUpType, RacerState, SpeedClass } from "@/types";
 import { HUD } from "@/components/HUD";
 import { CarSelect } from "@/components/CarSelect";
@@ -58,6 +59,23 @@ export function GameApp() {
   const [countdownText, setCountdownText] = useState<string | number>("");
   const [combatEvents, setCombatEvents] = useState<string[]>([]);
   const [raceResults, setRaceResults] = useState<RacerState[]>([]);
+  const [roomCode, setRoomCode] = useState(() => {
+    if (typeof window !== "undefined" && window.location.hash.startsWith("#room=")) {
+      return window.location.hash.slice(6) || "gp-tuba";
+    }
+    return "gp-tuba";
+  });
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [peerProfiles, setPeerProfiles] = useState<
+    Record<string, { name: string; carId: string; color: string }>
+  >({});
+
+  const p2p = useP2PRoom({
+    room: roomCode,
+    name: playerName,
+    enabled: gameMode === "multiplayer" || screen === "racing",
+  });
+
   const [hudData, setHudData] = useState({
     speed: 0,
     lap: 1,
@@ -77,6 +95,7 @@ export function GameApp() {
     isFinalLap: false,
     isLeader: false,
     blueThreat: false,
+    fps: 60,
   });
   const [minimapData, setMinimapData] = useState<{
     curvePoints: { x: number; z: number }[];
@@ -145,6 +164,66 @@ export function GameApp() {
     };
   }, []);
 
+  // Sync P2P profile (car, color, name) to peers
+  useEffect(() => {
+    if (p2p.joined) {
+      p2p.send({
+        type: "player:profile",
+        id: p2p.selfId,
+        name: playerName,
+        carId: selectedCarId,
+        color: selectedColor,
+      });
+    }
+  }, [p2p, playerName, selectedCarId, selectedColor]);
+
+  // Handle incoming network messages
+  useEffect(() => {
+    const unsub = p2p.onMessage((from, rawData) => {
+      const data = rawData as any;
+      if (!data || typeof data !== "object") return;
+
+      if (data.type === "player:profile") {
+        setPeerProfiles((prev) => ({
+          ...prev,
+          [from]: {
+            name: data.name || from,
+            carId: data.carId || "speedy_turbo",
+            color: data.color || "#3b82f6",
+          },
+        }));
+      } else if (data.type === "race:start") {
+        if (data.trackId) setSelectedTrackId(data.trackId);
+        if (data.laps) setSelectedLaps(data.laps);
+        if (data.speedClass) setSpeedClass(data.speedClass);
+        setScreen("racing");
+      } else if (data.type === "player:state") {
+        engineRef.current?.applyRemoteState(data.state);
+      } else if (data.type === "projectile:spawn") {
+        engineRef.current?.applyNetworkProjectile(data.projectile);
+      } else if (data.type === "network:hit") {
+        engineRef.current?.applyNetworkHit(data.hit);
+      } else if (data.type === "box:taken") {
+        engineRef.current?.applyItemBoxTaken(data.data);
+      }
+    });
+    return unsub;
+  }, [p2p]);
+
+  // High-rate state synchronization during multiplayer racing (~30 Hz)
+  useEffect(() => {
+    if (screen !== "racing" || gameMode !== "multiplayer") return;
+    const interval = window.setInterval(() => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const sync = engine.getLocalSyncState();
+      if (sync) {
+        p2p.broadcast({ type: "player:state", state: sync });
+      }
+    }, 33);
+    return () => window.clearInterval(interval);
+  }, [screen, gameMode, p2p]);
+
   useEffect(() => {
     if (screen !== "racing") {
       engineRef.current?.destroy();
@@ -156,10 +235,41 @@ export function GameApp() {
     soundManager.init();
     setCombatEvents([]);
     const trackDef = TRACK_DEFINITIONS.find((t) => t.id === selectedTrackId) || TRACK_DEFINITIONS[0];
-    const customRacers =
-      gameMode === "timetrial"
-        ? [{ id: "player_1", name: playerName, carId: selectedCarId, color: selectedColor, isAI: false }]
-        : undefined;
+
+    const localId = gameMode === "multiplayer" ? p2p.selfId : "player_1";
+    let customRacers: { id: string; name: string; carId: string; color: string; isAI: boolean }[] | undefined;
+
+    if (gameMode === "timetrial") {
+      customRacers = [{ id: localId, name: playerName, carId: selectedCarId, color: selectedColor, isAI: false }];
+    } else if (gameMode === "multiplayer") {
+      const connectedHumans = [
+        { id: p2p.selfId, name: playerName, carId: selectedCarId, color: selectedColor, isAI: false },
+        ...p2p.peers.map((peer) => {
+          const prof = peerProfiles[peer.id];
+          return {
+            id: peer.id,
+            name: prof?.name || peer.name || "Sõitja",
+            carId: prof?.carId || "speedy_turbo",
+            color: prof?.color || "#3b82f6",
+            isAI: false,
+          };
+        }),
+      ].sort((a, b) => a.id.localeCompare(b.id));
+
+      const aiFillCount = Math.max(0, 6 - connectedHumans.length);
+      const aiDefs = CAR_DEFINITIONS.filter((c) => !connectedHumans.some((h) => h.carId === c.id)).slice(0, aiFillCount);
+      customRacers = [
+        ...connectedHumans,
+        ...aiDefs.map((ai) => ({
+          id: `ai_${ai.id}`,
+          name: ai.driverName,
+          carId: ai.id,
+          color: ai.primaryColor,
+          isAI: true,
+        })),
+      ];
+    }
+
     const engine = new ToonCarEngine(
       container,
       trackDef,
@@ -205,20 +315,47 @@ export function GameApp() {
           setScreen("results");
         },
         onCountdownTick: (val) => setCountdownText(val),
+        onProjectileSpawn: (projectile) => {
+          if (gameMode === "multiplayer") {
+            p2p.send({ type: "projectile:spawn", projectile });
+          }
+        },
+        onNetworkHit: (hit) => {
+          if (gameMode === "multiplayer") {
+            p2p.send({ type: "network:hit", hit });
+          }
+        },
+        onItemBoxTaken: (data) => {
+          if (gameMode === "multiplayer") {
+            p2p.send({ type: "box:taken", data });
+          }
+        },
       },
       customRacers,
       customization,
       speedClass,
-      "player_1",
+      localId,
     );
-    engine.localPlayerId = "player_1";
+    engine.localPlayerId = localId;
     engineRef.current = engine;
     setPaused(false);
     return () => {
       engine.destroy();
       engineRef.current = null;
     };
-  }, [screen, selectedTrackId, selectedCarId, selectedColor, selectedLaps, customization, speedClass, gameMode, playerName]);
+  }, [
+    screen,
+    selectedTrackId,
+    selectedCarId,
+    selectedColor,
+    selectedLaps,
+    customization,
+    speedClass,
+    gameMode,
+    playerName,
+    p2p,
+    peerProfiles,
+  ]);
 
   const selectedCar = CAR_DEFINITIONS.find((c) => c.id === selectedCarId) || CAR_DEFINITIONS[0];
   const selectedTrack = TRACK_DEFINITIONS.find((t) => t.id === selectedTrackId) || TRACK_DEFINITIONS[0];
@@ -229,6 +366,14 @@ export function GameApp() {
       setCupStageIndex(0);
       setCupStandings([]);
       setSelectedTrackId(TRACK_DEFINITIONS[0].id);
+    }
+    if (gameMode === "multiplayer") {
+      p2p.send({
+        type: "race:start",
+        trackId: selectedTrackId,
+        laps: selectedLaps,
+        speedClass,
+      });
     }
     setScreen("racing");
   };
@@ -307,6 +452,12 @@ export function GameApp() {
           combatEvents={combatEvents}
           countdownText={countdownText}
           minimapData={minimapData}
+          fps={hudData.fps}
+          multiplayerInfo={{
+            isMultiplayer: gameMode === "multiplayer",
+            peerCount: p2p.peers.length,
+            pingMs: p2p.peers[0]?.rttMs,
+          }}
           onUseItem={() => {
             const local = engineRef.current?.racers.find((r) => r.id === engineRef.current?.localPlayerId);
             if (local && engineRef.current) engineRef.current.firePowerUp(local);
@@ -444,6 +595,78 @@ export function GameApp() {
                   onSelectGameMode={setGameMode}
                   onSelectSpeedClass={setSpeedClass}
                 />
+
+                {gameMode === "multiplayer" && (
+                  <div className="mt-5 rounded-lg border border-line bg-raised/80 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`size-2.5 rounded-full ${p2p.joined ? "bg-ok animate-pulse" : "bg-warn"}`} />
+                        <Wifi className="size-4 text-accent" />
+                        <span className="text-sm font-semibold">
+                          {p2p.joined ? `Võrgusõidu tuba: ${roomCode}` : "Ühendan võrgutuppa..."}
+                        </span>
+                        <span className="flex items-center gap-1 rounded bg-line px-2 py-0.5 text-xs text-muted">
+                          <Users className="size-3 text-muted" />
+                          {p2p.peers.length + 1} sõitja{p2p.peers.length + 1 === 1 ? "" : "t"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `${window.location.origin}${window.location.pathname}#room=${encodeURIComponent(roomCode)}`;
+                          navigator.clipboard?.writeText(url);
+                          setCopiedLink(true);
+                          setTimeout(() => setCopiedLink(false), 2000);
+                        }}
+                        className="flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-xs font-medium hover:bg-surface/80"
+                      >
+                        {copiedLink ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
+                        {copiedLink ? "Link kopeeritud!" : "Kutsu sõber (link)"}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs text-muted">
+                        <span>Tuba:</span>
+                        <input
+                          value={roomCode}
+                          onChange={(e) => {
+                            const code = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+                            setRoomCode(code || "gp-tuba");
+                            window.location.hash = `#room=${code || "gp-tuba"}`;
+                          }}
+                          className="h-8 w-32 rounded border border-line bg-surface px-2 text-xs font-mono text-fg"
+                          placeholder="toa-kood"
+                        />
+                      </label>
+                      <span className="text-xs text-faint">Jaga toakoodi või linki kaasmängijatele</span>
+                    </div>
+
+                    <div className="mt-3 border-t border-line/60 pt-3">
+                      <div className="text-[11px] uppercase tracking-wider text-faint">Toas olevad sõitjad:</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <div className="flex items-center gap-2 rounded-md border border-accent/40 bg-surface px-3 py-1.5 text-xs">
+                          <span className="size-3 rounded-full" style={{ backgroundColor: selectedColor }} />
+                          <span className="font-semibold text-fg">{playerName} (Sina)</span>
+                          <span className="text-faint">· {selectedCar.name}</span>
+                        </div>
+                        {p2p.peers.map((peer) => {
+                          const prof = peerProfiles[peer.id];
+                          const car = CAR_DEFINITIONS.find((c) => c.id === prof?.carId) || CAR_DEFINITIONS[0];
+                          return (
+                            <div key={peer.id} className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 text-xs">
+                              <span className="size-3 rounded-full" style={{ backgroundColor: prof?.color || "#3b82f6" }} />
+                              <span className="font-medium text-fg">{prof?.name || peer.name || "Sõitja"}</span>
+                              <span className="text-faint">· {car.name}</span>
+                              {peer.rttMs != null && <span className="font-mono text-[10px] text-ok">({peer.rttMs}ms)</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-6 flex flex-wrap justify-between gap-2">
                   <button type="button" onClick={() => setScreen("menu")} className="h-11 rounded-md border border-line px-4 text-sm">
                     Tagasi
@@ -455,7 +678,11 @@ export function GameApp() {
                     className="flex h-11 items-center gap-2 rounded-md bg-accent px-5 text-sm font-medium text-accent-fg"
                   >
                     <Flag className="size-4" />
-                    {gameMode === "cup" ? "Alusta karikat" : `Sõida: ${selectedTrack.name.split(" (")[0]}`}
+                    {gameMode === "cup"
+                      ? "Alusta karikat"
+                      : gameMode === "multiplayer"
+                        ? `Alusta võrgusõitu (${p2p.peers.length + 1} mängijat)`
+                        : `Sõida: ${selectedTrack.name.split(" (")[0]}`}
                   </button>
                 </div>
               </div>

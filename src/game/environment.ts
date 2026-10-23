@@ -55,14 +55,12 @@ export function addWorldDressing(
 
   let water: THREE.Mesh | undefined;
   if (trackDef.theme === "beach" || trackDef.theme === "ice") {
-    const waterMat = new THREE.MeshPhysicalMaterial({
+    const waterMat = new THREE.MeshStandardMaterial({
       color: trackDef.theme === "ice" ? 0x9fd4ea : 0x1d6f9a,
-      roughness: 0.18,
-      metalness: 0.15,
-      transmission: 0.15,
+      roughness: 0.15,
+      metalness: 0.2,
       transparent: true,
-      opacity: 0.88,
-      envMapIntensity: 0.8,
+      opacity: 0.85,
     });
     water = new THREE.Mesh(new THREE.CircleGeometry(980, 48), waterMat);
     water.rotation.x = -Math.PI / 2;
@@ -105,9 +103,9 @@ function scatterThemeProps(group: THREE.Group, track: TrackData, theme: TrackDef
   const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
   const crowns = new THREE.InstancedMesh(crownGeo, crownMat, count);
   const rocks = new THREE.InstancedMesh(rockGeo, rockMat, count);
-  trunks.castShadow = true;
-  crowns.castShadow = true;
-  rocks.castShadow = true;
+  trunks.receiveShadow = true;
+  crowns.receiveShadow = true;
+  rocks.receiveShadow = true;
   trunks.frustumCulled = false;
   crowns.frustumCulled = false;
   rocks.frustumCulled = false;
@@ -158,8 +156,8 @@ function scatterBuildings(group: THREE.Group, pts: TrackData["centerlinePoints"]
   const matB = makeLambert(0x111827, { emissive: 0xdb2777, emissiveIntensity: 0.22, metalness: 0.5, roughness: 0.4 });
   const meshA = new THREE.InstancedMesh(boxGeo, matA, count);
   const meshB = new THREE.InstancedMesh(boxGeo, matB, count);
-  meshA.castShadow = true;
-  meshB.castShadow = true;
+  meshA.receiveShadow = true;
+  meshB.receiveShadow = true;
   let a = 0;
   let b = 0;
   for (let i = 3; i < pts.length && a + b < count; i += Math.max(1, Math.floor(pts.length / count))) {
@@ -216,13 +214,13 @@ export function createSun(theme: TrackDefinition["theme"]) {
   const sun = new THREE.DirectionalLight(color, intensity);
   sun.position.set(70, 120, 55);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.near = 4;
-  sun.shadow.camera.far = 220;
-  sun.shadow.camera.left = -55;
-  sun.shadow.camera.right = 55;
-  sun.shadow.camera.top = 55;
-  sun.shadow.camera.bottom = -55;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.near = 5;
+  sun.shadow.camera.far = 160;
+  sun.shadow.camera.left = -45;
+  sun.shadow.camera.right = 45;
+  sun.shadow.camera.top = 45;
+  sun.shadow.camera.bottom = -45;
   sun.shadow.bias = -0.00025;
   sun.shadow.normalBias = 0.04;
   const target = new THREE.Object3D();
