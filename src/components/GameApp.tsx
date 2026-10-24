@@ -39,6 +39,34 @@ function saveState(data: object) {
   }
 }
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fallback to execCommand below */
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "-9999px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const successful = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return successful;
+  } catch {
+    return false;
+  }
+}
+
 export function GameApp() {
   const saved = loadSave();
   const [screen, setScreen] = useState<Screen>("menu");
@@ -60,15 +88,39 @@ export function GameApp() {
   const [combatEvents, setCombatEvents] = useState<string[]>([]);
   const [raceResults, setRaceResults] = useState<RacerState[]>([]);
   const [roomCode, setRoomCode] = useState(() => {
-    if (typeof window !== "undefined" && window.location.hash.startsWith("#room=")) {
-      return window.location.hash.slice(6) || "gp-tuba";
+    if (typeof window !== "undefined" && window.location.hash.includes("room=")) {
+      const match = window.location.hash.match(/room=([^&]+)/);
+      if (match) return decodeURIComponent(match[1]).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "") || "gp-tuba";
     }
     return "gp-tuba";
   });
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [peerProfiles, setPeerProfiles] = useState<
     Record<string, { name: string; carId: string; color: string }>
   >({});
+
+  // Sync room code with URL hash (#room=...) and auto-enable multiplayer if hash present
+  useEffect(() => {
+    const syncFromHash = () => {
+      if (typeof window === "undefined") return;
+      const hash = window.location.hash;
+      if (hash.includes("room=")) {
+        const match = hash.match(/room=([^&]+)/);
+        if (match) {
+          const code = decodeURIComponent(match[1]).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+          if (code) {
+            setRoomCode(code);
+            setGameMode("multiplayer");
+          }
+        }
+      }
+    };
+
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
 
   const p2p = useP2PRoom({
     room: roomCode,
@@ -557,6 +609,57 @@ export function GameApp() {
                 >
                   <Play className="size-4" /> Alusta sõitu
                 </button>
+
+                <div className="rounded-xl border border-line bg-surface/90 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users className="size-4 text-accent" />
+                      <span className="text-sm font-semibold text-fg">🌐 Mitmikmäng / Liitu toaga</span>
+                    </div>
+                    <span className="text-[11px] text-faint">P2P otseside</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      value={roomCode}
+                      onChange={(e) => {
+                        const code = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+                        setRoomCode(code || "gp-tuba");
+                        if (typeof window !== "undefined") {
+                          window.location.hash = `#room=${code || "gp-tuba"}`;
+                        }
+                      }}
+                      placeholder="Toa kood (nt. kiire-sõber)"
+                      className="h-10 flex-1 min-w-[160px] rounded-md border border-line bg-bg px-3 text-xs font-mono font-medium text-fg placeholder:text-muted"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGameMode("multiplayer");
+                        setScreen("circuit");
+                      }}
+                      className="flex h-10 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-medium text-accent-fg hover:opacity-90 transition-opacity"
+                    >
+                      <Users className="size-3.5" /> Liitu toaga
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted pt-1">
+                    <span>Trüki toa kood või kopeeri otselink sõbrale:</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const url = `${window.location.origin}${window.location.pathname}#room=${encodeURIComponent(roomCode)}`;
+                        const ok = await copyToClipboard(url);
+                        setCopiedLink(ok);
+                        setTimeout(() => setCopiedLink(false), 2500);
+                      }}
+                      className="flex items-center gap-1 font-medium text-accent hover:underline"
+                    >
+                      {copiedLink ? <Check className="size-3 text-ok" /> : <Copy className="size-3" />}
+                      {copiedLink ? "Link kopeeritud! ✓" : "Kopeeri otselink"}
+                    </button>
+                  </div>
+                </div>
+
                 <p className="text-xs text-faint">W gaas · A/D rool · tühik drift · E ese</p>
               </div>
             )}
@@ -597,12 +700,12 @@ export function GameApp() {
                 />
 
                 {gameMode === "multiplayer" && (
-                  <div className="mt-5 rounded-lg border border-line bg-raised/80 p-4">
+                  <div className="mt-5 rounded-lg border border-line bg-raised/80 p-4 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <span className={`size-2.5 rounded-full ${p2p.joined ? "bg-ok animate-pulse" : "bg-warn"}`} />
                         <Wifi className="size-4 text-accent" />
-                        <span className="text-sm font-semibold">
+                        <span className="text-sm font-semibold text-fg">
                           {p2p.joined ? `Võrgusõidu tuba: ${roomCode}` : "Ühendan võrgutuppa..."}
                         </span>
                         <span className="flex items-center gap-1 rounded bg-line px-2 py-0.5 text-xs text-muted">
@@ -610,36 +713,65 @@ export function GameApp() {
                           {p2p.peers.length + 1} sõitja{p2p.peers.length + 1 === 1 ? "" : "t"}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const url = `${window.location.origin}${window.location.pathname}#room=${encodeURIComponent(roomCode)}`;
-                          navigator.clipboard?.writeText(url);
-                          setCopiedLink(true);
-                          setTimeout(() => setCopiedLink(false), 2000);
-                        }}
-                        className="flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-xs font-medium hover:bg-surface/80"
-                      >
-                        {copiedLink ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
-                        {copiedLink ? "Link kopeeritud!" : "Kutsu sõber (link)"}
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const url = `${window.location.origin}${window.location.pathname}#room=${encodeURIComponent(roomCode)}`;
+                            const ok = await copyToClipboard(url);
+                            setCopiedLink(ok);
+                            setTimeout(() => setCopiedLink(false), 2500);
+                          }}
+                          className="flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-xs font-medium hover:bg-surface/80 text-fg transition-colors"
+                        >
+                          {copiedLink ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
+                          {copiedLink ? "Link kopeeritud! ✓" : "Kopeeri otselink"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const ok = await copyToClipboard(roomCode);
+                            setCopiedCode(ok);
+                            setTimeout(() => setCopiedCode(false), 2500);
+                          }}
+                          className="flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-xs font-medium hover:bg-surface/80 text-fg transition-colors"
+                        >
+                          {copiedCode ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
+                          {copiedCode ? "Kood kopeeritud! ✓" : "Kopeeri kood"}
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
                       <label className="flex items-center gap-2 text-xs text-muted">
-                        <span>Tuba:</span>
+                        <span className="font-medium text-fg">Toa kood:</span>
                         <input
                           value={roomCode}
                           onChange={(e) => {
                             const code = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
                             setRoomCode(code || "gp-tuba");
-                            window.location.hash = `#room=${code || "gp-tuba"}`;
+                            if (typeof window !== "undefined") {
+                              window.location.hash = `#room=${code || "gp-tuba"}`;
+                            }
                           }}
-                          className="h-8 w-32 rounded border border-line bg-surface px-2 text-xs font-mono text-fg"
+                          className="h-8 w-36 rounded border border-line bg-surface px-2.5 text-xs font-mono font-semibold text-fg"
                           placeholder="toa-kood"
                         />
                       </label>
-                      <span className="text-xs text-faint">Jaga toakoodi või linki kaasmängijatele</span>
+                      <div className="flex flex-1 items-center gap-2 text-xs text-muted min-w-[220px]">
+                        <span>Otselink:</span>
+                        <input
+                          readOnly
+                          value={typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}#room=${encodeURIComponent(roomCode)}` : ""}
+                          onClick={(e) => (e.target as HTMLInputElement).select()}
+                          className="h-8 flex-1 rounded border border-line bg-surface px-2 text-[11px] font-mono text-muted select-all"
+                          title="Klõpsa lingi märgistamiseks"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded border border-line/60 bg-surface/50 p-2 text-xs text-muted">
+                      💡 <strong>Kuidas sõbraga ühineda?</strong> Sisesta siia või peamenüüsse sõbra <strong>Toa kood</strong> (nt <code>minu-ralli</code>) või saada talle eespool olev <strong>Otselink</strong>! Kui sõber lingi avab, ühendatakse ta automaatselt sinu tuppa.
                     </div>
 
                     <div className="mt-3 border-t border-line/60 pt-3">
