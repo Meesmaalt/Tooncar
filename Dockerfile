@@ -1,7 +1,7 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+RUN npm install --no-audit --no-fund
 COPY . .
 ENV NITRO_PRESET=node-server
 ENV VITE_AUTH_ENABLED=false
