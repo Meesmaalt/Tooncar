@@ -1187,6 +1187,15 @@ export class ToonCarEngine {
     }
   }
 
+  public applyItemBoxIndex(boxIdx: number) {
+    const box = this.trackData.itemBoxes[boxIdx];
+    if (box && box.active) {
+      box.active = false;
+      box.respawnTime = 7;
+      box.mesh.visible = false;
+    }
+  }
+
   public applyNetworkHit(hit: { type: string; targetId: string; x?: number; y?: number; z?: number }) {
     if (!hit || !hit.targetId) return;
     const t = this.racers.find(r => r.id === hit.targetId);

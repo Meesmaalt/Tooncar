@@ -1,11 +1,11 @@
-export { P2PRoom, defaultIceServers } from "./p2p";
-export { useP2PRoom } from "./use-p2p-room";
+export { RoomManager } from "./room.server";
 export type {
-  PeerInfo,
-  P2PRoomOptions,
-  SignalKind,
-  PeerRow,
-  SignalRow,
-  RtcPollResponse,
-} from "./p2p";
-export type { UseP2PRoomOptions, P2PRoomHandle } from "./use-p2p-room";
+  ServerRoom,
+  ServerPlayer,
+  ServerChatMessage,
+  RoomSummary,
+  RemoteRacerSyncState,
+} from "./room.server";
+
+export { useServerRoom } from "./use-server-room";
+export type { UseServerRoomOptions } from "./use-server-room";

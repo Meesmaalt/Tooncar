@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
-cd /workspace
-node scripts/preview.mjs stop || true
+cd /workspace 2>/dev/null || cd /app/applet || cd .
+[ -f scripts/preview.mjs ] && node scripts/preview.mjs stop 2>/dev/null || true
 if curl -sf -o /dev/null --max-time 2 http://127.0.0.1:8080/; then
   exit 0
 fi
